@@ -16,30 +16,13 @@ import { Colors } from '../constants/theme';
 import { useApp } from '../context/AppContext';
 
 export default function AuthScreen() {
-  const { signIn, signUp, loginAs, authError } = useApp();
+  const { signIn, signUp, authError } = useApp();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-
-  const handleQuickLogin = async (role: 'customer' | 'admin') => {
-    setLoading(true);
-    setLocalError(null);
-    try {
-      await loginAs(role);
-      if (role === 'admin') {
-        router.replace('/admin');
-      } else {
-        router.replace('/');
-      }
-    } catch (err: any) {
-      setLocalError(err.message || 'Quick login failed');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleAuthSubmit = async () => {
     if (!email.trim() || !password.trim()) {
@@ -54,21 +37,34 @@ export default function AuthScreen() {
     setLoading(true);
     setLocalError(null);
 
+    const cleanEmail = email.trim().toLowerCase();
+
     try {
       if (isSignUp) {
-        const res = await signUp(email, password, name);
+        const res = await signUp(cleanEmail, password, name);
         if (!res.success) {
           setLocalError(res.error || 'Failed to register account.');
         } else {
-          Alert.alert('Sanctuary Account Ready', 'Your profile has been created successfully!');
-          router.replace('/');
+          Alert.alert(
+            'Account Created',
+            'Your account has been registered. If email confirmation is enabled on your Supabase project, please confirm your email.'
+          );
+          if (cleanEmail === 'admin@gmail.com') {
+            router.replace('/admin');
+          } else {
+            router.replace('/');
+          }
         }
       } else {
-        const res = await signIn(email, password);
+        const res = await signIn(cleanEmail, password);
         if (!res.success) {
-          setLocalError(res.error || 'Invalid email or password.');
+          setLocalError(res.error || 'Invalid credentials or email not confirmed.');
         } else {
-          router.replace('/');
+          if (cleanEmail === 'admin@gmail.com') {
+            router.replace('/admin');
+          } else {
+            router.replace('/');
+          }
         }
       }
     } catch (e: any) {
@@ -76,6 +72,12 @@ export default function AuthScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fillQuickAccount = (quickEmail: string) => {
+    setEmail(quickEmail);
+    setPassword('');
+    setIsSignUp(false);
   };
 
   return (
@@ -88,158 +90,170 @@ export default function AuthScreen() {
         {/* Brand Header */}
         <View style={styles.brandHero}>
           <View style={styles.logoPill}>
-            <Ionicons name="sparkles" size={30} color={Colors.primaryContainer} />
+            <Ionicons name="sparkles" size={28} color={Colors.primary} />
           </View>
           <Text style={styles.brandTitle}>Eloria</Text>
-          <Text style={styles.brandTagline}>Massage Sanctuary & Client Management</Text>
+          <Text style={styles.brandTagline}>Wellness Sanctuary & Massage Booking</Text>
         </View>
 
-        {/* Demo Fast Login Pills */}
-        <View style={styles.quickAccessCard}>
-          <Text style={styles.quickAccessTitle}>Instant Demo Sign-In</Text>
-          <Text style={styles.quickAccessSubtitle}>
-            Switch roles seamlessly using live Supabase authentication:
-          </Text>
-
-          <View style={styles.quickButtonsCol}>
+        {/* Account Type Selector helper */}
+        <View style={styles.accountSelectorBox}>
+          <Text style={styles.selectorTitle}>Select Account Type to Sign In:</Text>
+          <View style={styles.selectorButtonsRow}>
             <TouchableOpacity
-              style={styles.customerQuickBtn}
-              onPress={() => handleQuickLogin('customer')}
-              activeOpacity={0.85}
-              disabled={loading}
+              style={[
+                styles.accountChip,
+                email.toLowerCase() === 'admin@gmail.com' && styles.accountChipActive,
+              ]}
+              onPress={() => fillQuickAccount('admin@gmail.com')}
+              activeOpacity={0.8}
             >
-              <View style={styles.btnIconCircle}>
-                <Ionicons name="person" size={18} color={Colors.onPrimary} />
-              </View>
-              <View style={styles.btnTextBox}>
-                <Text style={styles.btnTitle}>Enter as Client (Elena Vance)</Text>
-                <Text style={styles.btnSub}>Browse treatments, book appointments & pay</Text>
-              </View>
-              {loading ? (
-                <ActivityIndicator size="small" color={Colors.onPrimary} />
-              ) : (
-                <Ionicons name="arrow-forward" size={18} color={Colors.onPrimary} />
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.adminQuickBtn}
-              onPress={() => handleQuickLogin('admin')}
-              activeOpacity={0.85}
-              disabled={loading}
-            >
-              <View style={[styles.btnIconCircle, { backgroundColor: Colors.surfaceContainerLowest }]}>
-                <Ionicons name="shield-checkmark" size={18} color={Colors.primary} />
-              </View>
-              <View style={styles.btnTextBox}>
-                <Text style={[styles.btnTitle, { color: Colors.primary }]}>
-                  Enter as Clinic Director (Marcus Sterling)
-                </Text>
-                <Text style={[styles.btnSub, { color: Colors.tertiary }]}>
-                  Admin dashboard, calendar, services & clients
-                </Text>
-              </View>
-              {loading ? (
-                <ActivityIndicator size="small" color={Colors.primary} />
-              ) : (
-                <Ionicons name="arrow-forward" size={18} color={Colors.primary} />
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Traditional Form Card */}
-        <View style={styles.formCard}>
-          <Text style={styles.formTitle}>
-            {isSignUp ? 'Create Sanctuary Account' : 'Sign In With Credentials'}
-          </Text>
-
-          {(localError || authError) && (
-            <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={18} color="#D32F2F" />
-              <Text style={styles.errorBannerText}>{localError || authError}</Text>
-            </View>
-          )}
-
-          {isSignUp && (
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>FULL NAME</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Elena Vance"
-                placeholderTextColor={Colors.tertiary}
-                value={name}
-                onChangeText={setName}
-                editable={!loading}
+              <Ionicons
+                name="shield-checkmark"
+                size={16}
+                color={email.toLowerCase() === 'admin@gmail.com' ? Colors.onPrimary : Colors.primary}
               />
-            </View>
-          )}
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="elena.vance@example.com"
-              placeholderTextColor={Colors.tertiary}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-              editable={!loading}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>PASSWORD</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••••••"
-              placeholderTextColor={Colors.tertiary}
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-              editable={!loading}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.submitFormBtn, loading && { opacity: 0.7 }]}
-            onPress={handleAuthSubmit}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={Colors.onPrimary} />
-            ) : (
-              <Text style={styles.submitFormBtnText}>
-                {isSignUp ? 'Register & Continue' : 'Sign In'}
+              <Text
+                style={[
+                  styles.accountChipText,
+                  email.toLowerCase() === 'admin@gmail.com' && styles.accountChipTextActive,
+                ]}
+              >
+                Administrator
               </Text>
-            )}
-          </TouchableOpacity>
+            </TouchableOpacity>
 
+            <TouchableOpacity
+              style={[
+                styles.accountChip,
+                email.toLowerCase() === 'useradmin@gmail.com' && styles.accountChipActive,
+              ]}
+              onPress={() => fillQuickAccount('useradmin@gmail.com')}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="person"
+                size={16}
+                color={email.toLowerCase() === 'useradmin@gmail.com' ? Colors.onPrimary : Colors.primary}
+              />
+              <Text
+                style={[
+                  styles.accountChipText,
+                  email.toLowerCase() === 'useradmin@gmail.com' && styles.accountChipTextActive,
+                ]}
+              >
+                Client Account
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Tab Toggle: Sign In vs Register */}
+        <View style={styles.tabToggleRow}>
           <TouchableOpacity
-            style={styles.switchModeBtn}
+            style={[styles.tabButton, !isSignUp && styles.tabButtonActive]}
             onPress={() => {
-              setIsSignUp(!isSignUp);
+              setIsSignUp(false);
               setLocalError(null);
             }}
-            disabled={loading}
           >
-            <Text style={styles.switchModeText}>
-              {isSignUp
-                ? 'Already have an account? Sign in'
-                : "New to Eloria? Create a client profile"}
+            <Text style={[styles.tabButtonText, !isSignUp && styles.tabButtonTextActive]}>
+              Sign In
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, isSignUp && styles.tabButtonActive]}
+            onPress={() => {
+              setIsSignUp(true);
+              setLocalError(null);
+            }}
+          >
+            <Text style={[styles.tabButtonText, isSignUp && styles.tabButtonTextActive]}>
+              Create Client Account
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Guest fallback button */}
-        <TouchableOpacity
-          style={styles.guestLink}
-          onPress={() => router.replace('/')}
-          disabled={loading}
-        >
-          <Text style={styles.guestLinkText}>Continue as Guest Visitor</Text>
-        </TouchableOpacity>
+        {/* Form Card */}
+        <View style={styles.formCard}>
+          {isSignUp && (
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Full Name</Text>
+              <View style={styles.inputWrap}>
+                <Ionicons name="person-outline" size={18} color={Colors.mutedSlate} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="e.g. John Doe"
+                  placeholderTextColor={Colors.outline}
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                />
+              </View>
+            </View>
+          )}
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Email Address</Text>
+            <View style={styles.inputWrap}>
+              <Ionicons name="mail-outline" size={18} color={Colors.mutedSlate} style={styles.inputIcon} />
+              <TextInput
+                style={styles.textInput}
+                placeholder="name@example.com"
+                placeholderTextColor={Colors.outline}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Password</Text>
+            <View style={styles.inputWrap}>
+              <Ionicons name="lock-closed-outline" size={18} color={Colors.mutedSlate} style={styles.inputIcon} />
+              <TextInput
+                style={styles.textInput}
+                placeholder="Enter your secure password"
+                placeholderTextColor={Colors.outline}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+            </View>
+          </View>
+
+          {(localError || authError) && (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle" size={18} color={Colors.error} />
+              <Text style={styles.errorBannerText}>{localError || authError}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.primarySubmitBtn}
+            onPress={handleAuthSubmit}
+            disabled={loading}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <ActivityIndicator color={Colors.onPrimary} />
+            ) : (
+              <Text style={styles.primarySubmitBtnText}>
+                {isSignUp ? 'Create Client Account' : 'Sign In to Eloria'}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Security & Role Enforcement Note */}
+        <View style={styles.securityNote}>
+          <Ionicons name="shield-checkmark-outline" size={16} color={Colors.primary} />
+          <Text style={styles.securityNoteText}>
+            Secure Supabase Authentication with Row-Level Security. Administrator privileges are granted exclusively to authorized credentials.
+          </Text>
+        </View>
       </ScrollView>
     </ScreenContainer>
   );
@@ -248,181 +262,181 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
+    backgroundColor: Colors.background,
   },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 40,
+    padding: 20,
     paddingBottom: 40,
-    gap: 20,
   },
   brandHero: {
     alignItems: 'center',
-    gap: 6,
+    marginVertical: 20,
   },
   logoPill: {
-    width: 60,
-    height: 60,
-    borderRadius: 20,
-    backgroundColor: Colors.secondaryContainer,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: Colors.aquaTint,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 12,
   },
   brandTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: Colors.onSurface,
-    letterSpacing: -0.5,
+    fontSize: 26,
+    fontWeight: '700',
+    color: Colors.charcoal,
+    letterSpacing: 0.5,
   },
   brandTagline: {
     fontSize: 13,
-    color: Colors.tertiary,
-    textAlign: 'center',
-  },
-  quickAccessCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    shadowColor: Colors.charcoal,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-    gap: 10,
-  },
-  quickAccessTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  quickAccessSubtitle: {
-    fontSize: 12,
-    color: Colors.tertiary,
-    lineHeight: 17,
-  },
-  quickButtonsCol: {
-    gap: 10,
+    color: Colors.mutedSlate,
     marginTop: 4,
   },
-  customerQuickBtn: {
-    backgroundColor: Colors.primaryContainer,
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  adminQuickBtn: {
-    backgroundColor: Colors.secondaryContainer,
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(15, 166, 173, 0.3)',
-  },
-  btnIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnTextBox: {
-    flex: 1,
-  },
-  btnTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.onPrimary,
-  },
-  btnSub: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.85)',
-    marginTop: 1,
-  },
-  formCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
+  accountSelectorBox: {
+    backgroundColor: '#ffffff',
     borderRadius: 16,
-    padding: 18,
+    padding: 16,
+    marginBottom: 18,
     borderWidth: 1,
     borderColor: Colors.hairlineBorder,
-    gap: 12,
   },
-  formTitle: {
-    fontSize: 14,
+  selectorTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.mutedSlate,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  selectorButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  accountChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.aquaMist,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.aquaTint,
+  },
+  accountChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  accountChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  accountChipTextActive: {
+    color: Colors.onPrimary,
+  },
+  tabToggleRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  tabButtonActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+  },
+  tabButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.mutedSlate,
+  },
+  tabButtonTextActive: {
     fontWeight: '700',
+    color: Colors.primary,
+  },
+  formCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: Colors.hairlineBorder,
+  },
+  inputGroup: {
+    marginBottom: 14,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.onSurfaceVariant,
+    marginBottom: 6,
+  },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.outlineVariant,
+    paddingHorizontal: 12,
+    height: 46,
+  },
+  inputIcon: {
+    marginRight: 8,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 14,
     color: Colors.onSurface,
-    marginBottom: 4,
   },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FFEBEE',
-    borderWidth: 1,
-    borderColor: '#FFCDD2',
+    backgroundColor: Colors.errorContainer,
     padding: 10,
-    borderRadius: 8,
+    borderRadius: 10,
+    marginVertical: 12,
   },
   errorBannerText: {
-    fontSize: 12,
-    color: '#D32F2F',
     flex: 1,
+    fontSize: 12,
+    color: Colors.error,
+    fontWeight: '500',
   },
-  inputGroup: {
-    gap: 4,
-  },
-  inputLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.tertiary,
-    letterSpacing: 0.8,
-  },
-  input: {
-    backgroundColor: Colors.surfaceContainerLow,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 44,
-    fontSize: 13,
-    color: Colors.onSurface,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-  },
-  submitFormBtn: {
-    backgroundColor: Colors.primaryContainer,
+  primarySubmitBtn: {
+    backgroundColor: Colors.primary,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
     marginTop: 8,
   },
-  submitFormBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
+  primarySubmitBtnText: {
     color: Colors.onPrimary,
+    fontSize: 15,
+    fontWeight: '700',
   },
-  switchModeBtn: {
-    alignItems: 'center',
-    paddingVertical: 6,
+  securityNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginTop: 20,
+    paddingHorizontal: 10,
   },
-  switchModeText: {
+  securityNoteText: {
+    flex: 1,
     fontSize: 12,
-    color: Colors.primary,
-    fontWeight: '600',
-  },
-  guestLink: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  guestLinkText: {
-    fontSize: 13,
-    color: Colors.tertiary,
-    textDecorationLine: 'underline',
+    color: Colors.mutedSlate,
+    lineHeight: 18,
   },
 });

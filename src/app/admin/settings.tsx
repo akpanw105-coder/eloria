@@ -1,153 +1,179 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
-  Switch,
   TouchableOpacity,
   Alert,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AppHeader } from '../../components/AppHeader';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 
-export default function AdminSettingsScreen() {
-  const {
-    clinicAvailability,
-    updateClinicSettings,
-    resetDemoData,
-    currentUser,
-    logout,
-  } = useApp();
+const TIME_OPTIONS = [
+  '07:00 AM', '08:00 AM', '09:00 AM', '10:00 AM',
+  '07:00 PM', '08:00 PM', '09:00 PM', '10:00 PM',
+];
 
-  const daysList = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+export default function AdminSettingsScreen() {
+  const { clinicAvailability, updateClinicSettings, currentUser, logout } = useApp();
+  const [isSaving, setIsSaving] = useState(false);
+  const [allowSameDay, setAllowSameDay] = useState(clinicAvailability?.allowSameDayBooking ?? true);
+  const [daysOpen, setDaysOpen] = useState<string[]>(
+    clinicAvailability?.daysOpen ?? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  );
 
   const toggleDay = (day: string) => {
-    if (!clinicAvailability) return;
-    const currentDays = clinicAvailability.daysOpen;
-    const isPresent = currentDays.includes(day);
-    const updated = isPresent
-      ? currentDays.filter((d) => d !== day)
-      : [...currentDays, day];
-    updateClinicSettings({ daysOpen: updated });
+    setDaysOpen((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  };
+
+  const saveSettings = async () => {
+    setIsSaving(true);
+    try {
+      await updateClinicSettings({
+        allowSameDayBooking: allowSameDay,
+        daysOpen,
+      });
+      Alert.alert('Settings Saved', 'Clinic settings have been updated successfully.');
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save settings.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <ScreenContainer>
-      <AppHeader title="Sanctuary Operations" subtitle="Clinic Ops" showBack onBack={() => {}} />
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Clinic Operations</Text>
+      </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Practice Hours */}
-        <View style={styles.settingsCard}>
-          <Text style={styles.cardHeading}>Sanctuary Operating Hours</Text>
-
-          <View style={styles.timingRow}>
-            <View style={styles.timingBox}>
-              <Text style={styles.timingLabel}>OPENING</Text>
-              <Text style={styles.timingVal}>{clinicAvailability?.openTime || '08:30 AM'}</Text>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        {/* Admin Identity Banner */}
+        <View style={styles.adminIdentityBanner}>
+          <View style={styles.adminIdentityLeft}>
+            <View style={styles.shieldIcon}>
+              <Ionicons name="shield-checkmark" size={20} color={Colors.onPrimary} />
             </View>
-            <Ionicons name="arrow-forward" size={16} color={Colors.tertiary} />
-            <View style={styles.timingBox}>
-              <Text style={styles.timingLabel}>CLOSING</Text>
-              <Text style={styles.timingVal}>{clinicAvailability?.closeTime || '08:00 PM'}</Text>
+            <View>
+              <Text style={styles.adminIdentityName}>{currentUser?.name}</Text>
+              <Text style={styles.adminIdentityEmail}>{currentUser?.email}</Text>
             </View>
           </View>
-
-          <Text style={[styles.cardHeading, { marginTop: 10 }]}>Open Days</Text>
-          <View style={styles.daysGrid}>
-            {daysList.map((day) => {
-              const isOpen = clinicAvailability?.daysOpen.includes(day);
-              return (
-                <TouchableOpacity
-                  key={day}
-                  style={[styles.dayChip, isOpen && styles.dayChipActive]}
-                  onPress={() => toggleDay(day)}
-                >
-                  <Text style={[styles.dayChipText, isOpen && styles.dayChipTextActive]}>
-                    {day.slice(0, 3)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Booking Rules */}
-        <View style={styles.settingsCard}>
-          <Text style={styles.cardHeading}>Booking & Scheduling Policies</Text>
-
-          <View style={styles.settingToggleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.toggleTitle}>Allow Same-Day Appointments</Text>
-              <Text style={styles.toggleSub}>
-                Allow clients to book available slots within current business day
-              </Text>
-            </View>
-            <Switch
-              value={clinicAvailability?.allowSameDayBooking ?? true}
-              onValueChange={(val) => updateClinicSettings({ allowSameDayBooking: val })}
-              trackColor={{ false: Colors.surfaceContainer, true: Colors.primaryContainer }}
-            />
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.settingToggleRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.toggleTitle}>Maximum Advance Booking Window</Text>
-              <Text style={styles.toggleSub}>
-                Slots open up to 30 calendar days in advance
-              </Text>
-            </View>
-            <Text style={styles.windowVal}>30 Days</Text>
-          </View>
-        </View>
-
-        {/* Demo Persistence & Diagnostics */}
-        <View style={styles.settingsCard}>
-          <Text style={styles.cardHeading}>Demo Sandbox & Data Persistence</Text>
-          <Text style={styles.cardSub}>
-            Eloria operates with an in-browser local storage mock repository. Refreshing or
-            navigating persists your booked sessions, new services, and status updates.
-          </Text>
-
           <TouchableOpacity
-            style={styles.resetButton}
-            onPress={async () => {
-              await resetDemoData();
-              Alert.alert('Sanctuary Reset', 'Initial catalog and appointments restored.');
-            }}
-          >
-            <Ionicons name="refresh" size={16} color={Colors.error} />
-            <Text style={styles.resetButtonText}>Restore Pristine Factory State</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Director Profile info */}
-        <View style={styles.settingsCard}>
-          <Text style={styles.cardHeading}>Logged In Administrator</Text>
-          <Text style={styles.directorName}>{currentUser?.name || 'Marcus Sterling'}</Text>
-          <Text style={styles.directorEmail}>{currentUser?.email || 'admin@eloriawellness.com'}</Text>
-          <TouchableOpacity
-            style={styles.logoutBtn}
+            style={styles.signOutBtn}
             onPress={async () => {
               await logout();
-              Alert.alert('Signed Out', 'Signed out of administrator session.');
             }}
+            activeOpacity={0.7}
           >
-            <Text style={styles.logoutBtnText}>Sign Out</Text>
+            <Ionicons name="log-out-outline" size={16} color={Colors.error} />
+            <Text style={styles.signOutBtnText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={{ height: 100 }} />
+        {/* Payment Integration Info */}
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>Payment Integration Status</Text>
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <Ionicons name="card-outline" size={18} color={Colors.warning} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Paystack / Flutterwave Integration</Text>
+                <Text style={styles.infoDesc}>
+                  Payment gateway SDK integration requires your secret key configured in a secure server-side environment variable. Currently, bookings are recorded as "pending" payment status. To enable live payment collection, configure your payment provider API keys via a secure backend or Supabase Edge Function.
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.infoRow, { marginTop: 10 }]}>
+              <Ionicons name="notifications-outline" size={18} color={Colors.warning} />
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>2-Hour Appointment Reminders</Text>
+                <Text style={styles.infoDesc}>
+                  Reminder notifications require a Supabase Edge Function with a pg_cron job scheduled to run every 15 minutes, querying confirmed appointments due in 2 hours. Push notification delivery additionally requires Expo Push Token registration from each client's device. The reminder schedule infrastructure is ready but requires deployment of the Edge Function.
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Clinic Availability Days */}
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>Operating Days</Text>
+          <View style={styles.infoCard}>
+            {DAYS_OF_WEEK.map((day) => (
+              <View key={day} style={styles.dayRow}>
+                <Text style={styles.dayLabel}>{day}</Text>
+                <Switch
+                  value={daysOpen.includes(day)}
+                  onValueChange={() => toggleDay(day)}
+                  trackColor={{ false: Colors.outlineVariant, true: Colors.primaryContainer }}
+                  thumbColor={daysOpen.includes(day) ? Colors.primary : Colors.mutedSlate}
+                />
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Same-Day Booking Toggle */}
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>Booking Policy</Text>
+          <View style={styles.infoCard}>
+            <View style={styles.toggleRow}>
+              <View>
+                <Text style={styles.toggleLabel}>Allow Same-Day Booking</Text>
+                <Text style={styles.toggleDesc}>
+                  Clients can book appointments on the current day.
+                </Text>
+              </View>
+              <Switch
+                value={allowSameDay}
+                onValueChange={setAllowSameDay}
+                trackColor={{ false: Colors.outlineVariant, true: Colors.primaryContainer }}
+                thumbColor={allowSameDay ? Colors.primary : Colors.mutedSlate}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Database Migration / Setup Guide */}
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>Database Configuration</Text>
+          <View style={styles.migrationCard}>
+            <View style={styles.migrationHeader}>
+              <Ionicons name="server-outline" size={18} color={Colors.primary} />
+              <Text style={styles.migrationTitle}>Supabase SQL Migration Required</Text>
+            </View>
+            <Text style={styles.migrationDesc}>
+              Run <Text style={styles.monoText}>supabase_migration.sql</Text> in your Supabase SQL Editor to:
+            </Text>
+            <Text style={styles.migrationStep}>✓ Create the handle_new_user() trigger (auto-assigns roles)</Text>
+            <Text style={styles.migrationStep}>✓ Seed 6 default massage services with ₦ prices</Text>
+            <Text style={styles.migrationStep}>✓ Seed 3 default therapists</Text>
+            <Text style={styles.migrationStep}>✓ Apply Row Level Security policies</Text>
+            <Text style={styles.migrationStep}>✓ Enforce admin@gmail.com as the only admin account</Text>
+            <Text style={styles.migrationStep}>✗ Confirm both accounts exist & set passwords in Supabase Auth dashboard</Text>
+          </View>
+        </View>
+
+        {/* Save Button */}
+        <TouchableOpacity
+          style={[styles.saveBtn, isSaving && { opacity: 0.5 }]}
+          onPress={saveSettings}
+          disabled={isSaving}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.saveBtnText}>{isSaving ? 'Saving…' : 'Save Settings'}</Text>
+        </TouchableOpacity>
       </ScrollView>
 
       <AdminTabBar />
@@ -156,139 +182,112 @@ export default function AdminSettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  content: {
+  header: {
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 24,
-    gap: 14,
+    paddingVertical: 14,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.hairlineBorder,
   },
-  settingsCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    gap: 12,
-  },
-  cardHeading: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  cardSub: {
-    fontSize: 12,
-    color: Colors.tertiary,
-    lineHeight: 18,
-  },
-  timingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: Colors.surfaceContainerLow,
-    borderRadius: 12,
-    padding: 12,
-  },
-  timingBox: {
-    alignItems: 'center',
-    gap: 2,
-  },
-  timingLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.tertiary,
-    letterSpacing: 0.8,
-  },
-  timingVal: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  daysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  dayChip: {
-    backgroundColor: Colors.surfaceContainerLow,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  dayChipActive: {
-    backgroundColor: Colors.primaryContainer,
-  },
-  dayChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.tertiary,
-  },
-  dayChipTextActive: {
-    color: Colors.onPrimary,
-    fontWeight: '700',
-  },
-  settingToggleRow: {
+  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.charcoal },
+  scrollView: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 16, paddingBottom: 100 },
+  adminIdentityBanner: {
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 14,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: Colors.aquaTint,
   },
-  toggleTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  toggleSub: {
-    fontSize: 11,
-    color: Colors.tertiary,
-    marginTop: 2,
-  },
-  windowVal: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.hairlineBorder,
-  },
-  resetButton: {
-    flexDirection: 'row',
+  adminIdentityLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  shieldIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(186, 26, 26, 0.3)',
-    backgroundColor: Colors.surfaceContainerLowest,
   },
-  resetButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.error,
+  adminIdentityName: { fontSize: 14, fontWeight: '700', color: Colors.charcoal },
+  adminIdentityEmail: { fontSize: 11, color: Colors.mutedSlate, marginTop: 1 },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.errorContainer,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  directorName: {
+  signOutBtnText: { fontSize: 12, fontWeight: '700', color: Colors.error },
+  infoSection: { marginBottom: 20 },
+  sectionTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.onSurface,
+    color: Colors.charcoal,
+    marginBottom: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  directorEmail: {
-    fontSize: 12,
-    color: Colors.tertiary,
+  infoCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.hairlineBorder,
   },
-  logoutBtn: {
-    paddingVertical: 8,
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  infoContent: { flex: 1 },
+  infoLabel: { fontSize: 13, fontWeight: '700', color: Colors.charcoal, marginBottom: 4 },
+  infoDesc: { fontSize: 12, color: Colors.mutedSlate, lineHeight: 18 },
+  dayRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLow,
-    borderRadius: 10,
-    marginTop: 4,
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.hairlineBorder,
   },
-  logoutBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.error,
+  dayLabel: { fontSize: 14, color: Colors.charcoal, fontWeight: '500' },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
+  toggleLabel: { fontSize: 14, fontWeight: '700', color: Colors.charcoal },
+  toggleDesc: { fontSize: 12, color: Colors.mutedSlate, marginTop: 2 },
+  migrationCard: {
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.aquaTint,
+  },
+  migrationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  migrationTitle: { fontSize: 13, fontWeight: '700', color: Colors.primary },
+  migrationDesc: { fontSize: 12, color: Colors.charcoal, marginBottom: 8, lineHeight: 18 },
+  migrationStep: { fontSize: 12, color: Colors.onSurfaceVariant, lineHeight: 20 },
+  monoText: {
+    fontFamily: 'monospace',
+    backgroundColor: Colors.surfaceContainerHigh,
+    color: Colors.primary,
+    fontSize: 11,
+  },
+  saveBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  saveBtnText: { color: Colors.onPrimary, fontSize: 15, fontWeight: '700' },
 });

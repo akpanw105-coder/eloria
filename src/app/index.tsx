@@ -9,34 +9,44 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { AppHeader } from '../components/AppHeader';
 import { CustomerTabBar } from '../components/CustomerTabBar';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Colors } from '../constants/theme';
 import { useApp } from '../context/AppContext';
+import { formatNaira } from '../mock/initialData';
 
 export default function CustomerHomeScreen() {
   const { currentUser, services, appointments, refreshAll, isLoading } = useApp();
-  const [selectedDayIndex, setSelectedDayIndex] = useState(2); // Wednesday default
 
-  const daysOfWeek = [
-    { day: 'Mon', num: '12' },
-    { day: 'Tue', num: '13' },
-    { day: 'Wed', num: '14' },
-    { day: 'Thu', num: '15' },
-    { day: 'Fri', num: '16' },
-    { day: 'Sat', num: '17' },
-    { day: 'Sun', num: '18' },
-  ];
-
-  // Next upcoming confirmed appointment
-  const nextAppointment = appointments.find((a) => a.status === 'confirmed');
-  // Past appointment for recent history
-  const recentAppointment = appointments.find((a) => a.status === 'completed');
+  // Next upcoming confirmed or pending appointment for this client
+  const activeAppointment = appointments.find((a) => a.status === 'confirmed' || a.status === 'pending');
 
   return (
     <ScreenContainer>
-      <AppHeader title="Home" subtitle="Serene" />
+      {/* Modern Top Header */}
+      <View style={styles.topHeader}>
+        <View style={styles.brandTitleWrap}>
+          <View style={styles.logoPill}>
+            <Ionicons name="sparkles" size={18} color={Colors.primary} />
+          </View>
+          <View>
+            <Text style={styles.brandSub}>SANCTUARY & WELLNESS</Text>
+            <Text style={styles.brandTitle}>Eloria</Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.profileBtn}
+          onPress={() => router.push(currentUser?.role === 'admin' ? '/admin' : '/profile')}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name={currentUser?.role === 'admin' ? 'shield-checkmark' : 'person-circle-outline'}
+            size={28}
+            color={Colors.primary}
+          />
+        </TouchableOpacity>
+      </View>
 
       <ScrollView
         style={styles.scrollView}
@@ -44,268 +54,120 @@ export default function CustomerHomeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} tintColor={Colors.primary} />}
       >
-        {/* Top Personalized Greeting */}
-        <View style={styles.greetingRow}>
-          <View>
-            <View style={styles.statusPill}>
-              <Text style={styles.statusPillText}>Good morning</Text>
-              <View style={styles.pulsingDot} />
-            </View>
-            <Text style={styles.userName}>{currentUser?.name || 'Valued Guest'}</Text>
+        {/* Welcome Greeting */}
+        <View style={styles.greetingSection}>
+          <View style={styles.greetingBadge}>
+            <Text style={styles.greetingBadgeText}>Holistic Rejuvenation</Text>
+            <View style={styles.pulsingDot} />
           </View>
-
-          {/* Role quick switch banner */}
-          <TouchableOpacity
-            style={styles.roleChip}
-            onPress={() => router.push('/auth')}
-            activeOpacity={0.8}
-          >
-            <Ionicons
-              name={currentUser?.role === 'admin' ? 'shield-checkmark' : 'person'}
-              size={14}
-              color={Colors.primary}
-            />
-            <Text style={styles.roleChipText}>
-              {currentUser?.role === 'admin' ? 'Admin Mode' : 'Client Mode'}
-            </Text>
-          </TouchableOpacity>
+          <Text style={styles.greetingName}>
+            Welcome, {currentUser?.name || 'Valued Guest'}
+          </Text>
+          <Text style={styles.greetingSub}>
+            Book your bespoke therapeutic massage session with certified specialists.
+          </Text>
         </View>
 
-        {/* Book New Appointment Primary CTA Button */}
+        {/* Hero Booking CTA */}
         <TouchableOpacity
-          style={styles.bookCtaCard}
+          style={styles.heroCtaCard}
           onPress={() => router.push('/book')}
           activeOpacity={0.9}
         >
-          <View style={styles.bookCtaLeft}>
-            <View style={styles.bookCtaIconCircle}>
-              <Ionicons name="calendar" size={22} color={Colors.onPrimary} />
+          <View style={styles.heroCtaLeft}>
+            <View style={styles.heroCtaIconBox}>
+              <Ionicons name="calendar" size={24} color={Colors.onPrimary} />
             </View>
-            <View style={styles.bookCtaTextBox}>
-              <Text style={styles.bookCtaTitle}>Book New Appointment</Text>
-              <Text style={styles.bookCtaSub}>Choose specialist, date & time</Text>
+            <View>
+              <Text style={styles.heroCtaTitle}>Book an Appointment</Text>
+              <Text style={styles.heroCtaSub}>Choose massage, specialist & time</Text>
             </View>
           </View>
-          <Ionicons name="arrow-forward" size={20} color={Colors.onPrimary} />
+          <Ionicons name="arrow-forward-circle" size={28} color={Colors.onPrimary} />
         </TouchableOpacity>
 
-        {/* Mini Calendar Week Preview Strip */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitleCap}>August 2024</Text>
-          <TouchableOpacity onPress={() => router.push('/bookings')}>
-            <Text style={styles.sectionActionText}>Schedule</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.weekStripGrid}>
-          {daysOfWeek.map((item, idx) => {
-            const isSelected = selectedDayIndex === idx;
-            return (
-              <TouchableOpacity
-                key={item.day}
-                style={[styles.weekDayPill, isSelected && styles.weekDayPillActive]}
-                onPress={() => setSelectedDayIndex(idx)}
-                activeOpacity={0.7}
-              >
+        {/* Active Appointment Card (if any) */}
+        {activeAppointment && (
+          <View style={styles.appointmentBanner}>
+            <View style={styles.appointmentBannerHeader}>
+              <View style={styles.statusBadgeRow}>
+                <Ionicons
+                  name={activeAppointment.status === 'confirmed' ? 'checkmark-circle' : 'time-outline'}
+                  size={16}
+                  color={activeAppointment.status === 'confirmed' ? Colors.success : Colors.warning}
+                />
                 <Text
                   style={[
-                    styles.weekDayLabel,
-                    isSelected && styles.weekDayLabelActive,
+                    styles.statusBadgeText,
+                    { color: activeAppointment.status === 'confirmed' ? Colors.success : Colors.warning },
                   ]}
                 >
-                  {item.day}
+                  {activeAppointment.status === 'confirmed' ? 'Confirmed Booking' : 'Pending Confirmation'}
                 </Text>
-                <Text
-                  style={[
-                    styles.weekDayNum,
-                    isSelected && styles.weekDayNumActive,
-                  ]}
-                >
-                  {item.num}
-                </Text>
+              </View>
+              <TouchableOpacity onPress={() => router.push('/bookings')}>
+                <Text style={styles.viewDetailsText}>View Details</Text>
               </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Upcoming Appointment Section */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionHeading}>Upcoming Appointment</Text>
-          <View style={styles.nextBadge}>
-            <Text style={styles.nextBadgeText}>NEXT UP</Text>
-          </View>
-        </View>
-
-        {nextAppointment ? (
-          <View style={styles.appointmentCard}>
-            {/* Aqua strip with date & slot timing */}
-            <View style={styles.cardHeaderStrip}>
-              <Text style={styles.cardHeaderDate}>
-                {nextAppointment.date.includes('2026') ? 'Wed, 14 Aug' : nextAppointment.date}
-              </Text>
-              <Text style={styles.cardHeaderTime}>{nextAppointment.timeSlot}</Text>
             </View>
-
-            {/* Appointment Card Body */}
-            <View style={styles.cardBody}>
-              <View style={styles.cardMainRow}>
-                <View style={styles.therapistAvatar}>
-                  <Text style={styles.therapistInitial}>
-                    {nextAppointment.therapistName
-                      ?.split(' ')
-                      .map((p) => p[0])
-                      .join('')
-                      .slice(0, 2)
-                      .toUpperCase() || 'SP'}
-                  </Text>
-                </View>
-                <View style={styles.cardInfo}>
-                  <Text style={styles.serviceNameTitle}>{nextAppointment.serviceName}</Text>
-                  <Text style={styles.therapistLine}>
-                    Therapist:{' '}
-                    <Text style={styles.therapistLineBold}>{nextAppointment.therapistName}</Text>
-                  </Text>
-                </View>
-                <View style={styles.confirmedStatusPill}>
-                  <View style={styles.confirmedDot} />
-                  <Text style={styles.confirmedText}>Confirmed</Text>
-                </View>
-              </View>
-
-              <View style={styles.locationRow}>
-                <Ionicons name="location-outline" size={16} color={Colors.primary} />
-                <Text style={styles.locationText} numberOfLines={1}>
-                  {nextAppointment.location}
-                </Text>
-              </View>
-
-              <View style={styles.cardActionRow}>
-                <TouchableOpacity
-                  style={styles.detailsLink}
-                  onPress={() => router.push('/bookings')}
-                >
-                  <Text style={styles.detailsLinkText}>View Details</Text>
-                  <Ionicons name="chevron-forward" size={15} color={Colors.primary} />
-                </TouchableOpacity>
-
-                <View style={styles.utilBtnsRow}>
-                  <TouchableOpacity
-                    style={styles.utilBtn}
-                    onPress={() => router.push('/bookings')}
-                  >
-                    <Ionicons name="calendar-outline" size={14} color={Colors.onSurfaceVariant} />
-                    <Text style={styles.utilBtnText}>Cal</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.utilBtn}
-                    onPress={() => router.push('/bookings')}
-                  >
-                    <Ionicons name="map-outline" size={14} color={Colors.onSurfaceVariant} />
-                    <Text style={styles.utilBtnText}>Map</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.emptyCard}>
-            <Ionicons name="flower-outline" size={32} color={Colors.primaryContainer} />
-            <Text style={styles.emptyTitle}>No scheduled appointments</Text>
-            <Text style={styles.emptyDesc}>Treat yourself to renewal by booking a session today.</Text>
-            <TouchableOpacity
-              style={styles.emptyBookBtn}
-              onPress={() => router.push('/book')}
-            >
-              <Text style={styles.emptyBookBtnText}>Browse Treatments</Text>
-            </TouchableOpacity>
+            <Text style={styles.appointmentService}>{activeAppointment.serviceName}</Text>
+            <Text style={styles.appointmentMeta}>
+              {activeAppointment.date} • {activeAppointment.timeSlot} • Specialist: {activeAppointment.therapistName}
+            </Text>
           </View>
         )}
 
-        {/* Featured Massage Services Section */}
+        {/* Services Menu Section */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionHeading}>Featured Massage Services</Text>
-          <TouchableOpacity onPress={() => router.push('/services')}>
-            <Text style={styles.sectionActionText}>Explore all</Text>
-          </TouchableOpacity>
+          <View>
+            <Text style={styles.sectionTitle}>Our Massage Treatments</Text>
+            <Text style={styles.sectionSub}>All prices displayed in Nigerian Naira (₦)</Text>
+          </View>
         </View>
 
-        <View style={styles.servicesList}>
-          {services.slice(0, 3).map((item) => (
-            <View key={item.id} style={styles.serviceItemCard}>
-              <View style={styles.serviceLeft}>
-                <View style={styles.serviceIconContainer}>
-                  <Ionicons name="sparkles" size={22} color={Colors.primaryContainer} />
+        <View style={styles.servicesGrid}>
+          {services.map((service) => (
+            <View key={service.id} style={styles.serviceCard}>
+              <View style={styles.serviceTopRow}>
+                <View style={styles.badgePill}>
+                  <Text style={styles.badgePillText}>{service.badge || 'Therapeutic'}</Text>
                 </View>
-                <View style={styles.serviceTextBox}>
-                  <Text style={styles.serviceItemName} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  <Text style={styles.serviceMetaText}>
-                    {item.durationMinutes} min •{' '}
-                    <Text style={styles.servicePriceText}>${item.price}</Text>
-                  </Text>
-                </View>
+                <Text style={styles.serviceDuration}>{service.durationMinutes} mins</Text>
               </View>
 
-              <TouchableOpacity
-                style={styles.serviceBookButton}
-                onPress={() => router.push(`/book?serviceId=${item.id}`)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.serviceBookButtonText}>Book</Text>
-              </TouchableOpacity>
+              <Text style={styles.serviceName}>{service.name}</Text>
+              <Text style={styles.serviceDesc} numberOfLines={2}>
+                {service.description || service.tagline}
+              </Text>
+
+              <View style={styles.serviceFooter}>
+                <View>
+                  <Text style={styles.priceLabel}>Price</Text>
+                  <Text style={styles.servicePrice}>{formatNaira(service.price)}</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.bookSmallBtn}
+                  onPress={() => router.push({ pathname: '/book', params: { serviceId: service.id } })}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.bookSmallBtnText}>Book Now</Text>
+                  <Ionicons name="chevron-forward" size={14} color={Colors.onPrimary} />
+                </TouchableOpacity>
+              </View>
             </View>
           ))}
         </View>
 
-        {/* Recent History */}
-        {recentAppointment && (
-          <>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionHeading}>Recent History</Text>
-              <Text style={styles.sectionSubCap}>Past 30 days</Text>
-            </View>
-
-            <View style={styles.historyCard}>
-              <View style={styles.historyLeft}>
-                <View style={styles.historyIconCircle}>
-                  <Ionicons name="leaf" size={18} color={Colors.secondary} />
-                </View>
-                <View style={styles.historyTextBox}>
-                  <Text style={styles.historyName}>{recentAppointment.serviceName}</Text>
-                  <Text style={styles.historySub}>
-                    Completed • {recentAppointment.therapistName}
-                  </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.rebookBtn}
-                onPress={() => router.push(`/book?serviceId=${recentAppointment.serviceId}`)}
-              >
-                <Ionicons name="refresh" size={14} color={Colors.primary} />
-                <Text style={styles.rebookBtnText}>Rebook</Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
-
-        {/* Ambient Relaxation Tip Banner */}
-        <View style={styles.tipCard}>
-          <View style={styles.tipIconCircle}>
-            <Ionicons name="water" size={18} color={Colors.primaryContainer} />
-          </View>
-          <View style={styles.tipContent}>
-            <Text style={styles.tipTitle}>Hydration Reminder</Text>
-            <Text style={styles.tipText}>
-              Drink at least 500ml of room-temperature water before your session for enhanced
-              muscle relaxation and optimal therapeutic recovery.
+        {/* Sanctuary Commitment Info */}
+        <View style={styles.sanctuaryBanner}>
+          <Ionicons name="leaf-outline" size={24} color={Colors.primary} />
+          <View style={styles.sanctuaryTextWrap}>
+            <Text style={styles.sanctuaryTitle}>The Eloria Experience</Text>
+            <Text style={styles.sanctuaryDesc}>
+              Organic essential oils, discreet private suites, and certified bodywork specialists tailored to your relaxation.
             </Text>
           </View>
         </View>
-
-        {/* Bottom padding for floating customer tab bar */}
-        <View style={{ height: 90 }} />
       </ScrollView>
 
       <CustomerTabBar />
@@ -314,494 +176,283 @@ export default function CustomerHomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 20,
-    gap: 16,
-  },
-  greetingRow: {
+  topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.hairlineBorder,
   },
-  statusPill: {
+  brandTitleWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
   },
-  statusPillText: {
-    fontSize: 13,
-    color: Colors.onSurfaceVariant,
-    fontWeight: '500',
+  logoPill: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Colors.aquaMist,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.aquaTint,
+  },
+  brandSub: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.primary,
+    letterSpacing: 1,
+  },
+  brandTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.charcoal,
+  },
+  profileBtn: {
+    padding: 4,
+  },
+  scrollView: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  content: {
+    padding: 16,
+    paddingBottom: 90,
+  },
+  greetingSection: {
+    marginBottom: 16,
+  },
+  greetingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.aquaTint,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 6,
+    marginBottom: 6,
+  },
+  greetingBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.primary,
   },
   pulsingDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: Colors.primaryContainer,
+    backgroundColor: Colors.primary,
   },
-  userName: {
-    fontSize: 22,
+  greetingName: {
+    fontSize: 24,
     fontWeight: '700',
-    color: Colors.onSurface,
-    marginTop: 2,
-    letterSpacing: -0.3,
+    color: Colors.charcoal,
   },
-  roleChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.surfaceContainerLowest,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  greetingSub: {
+    fontSize: 13,
+    color: Colors.mutedSlate,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  heroCtaCard: {
+    backgroundColor: Colors.primary,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-  },
-  roleChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  bookCtaCard: {
-    backgroundColor: Colors.primaryContainer,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: Colors.primaryContainer,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 14,
+    marginBottom: 16,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
     elevation: 4,
   },
-  bookCtaLeft: {
+  heroCtaLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  bookCtaIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+  heroCtaIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bookCtaTextBox: {
-    flexDirection: 'column',
+  heroCtaTitle: {
+    color: Colors.onPrimary,
+    fontSize: 16,
+    fontWeight: '700',
   },
-  bookCtaTitle: {
+  heroCtaSub: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  appointmentBanner: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.hairlineBorder,
+    marginBottom: 20,
+  },
+  appointmentBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  statusBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  viewDetailsText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  appointmentService: {
     fontSize: 15,
     fontWeight: '700',
-    color: Colors.onPrimary,
+    color: Colors.charcoal,
   },
-  bookCtaSub: {
+  appointmentMeta: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.85)',
-    marginTop: 1,
+    color: Colors.mutedSlate,
+    marginTop: 4,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
+    marginBottom: 12,
   },
-  sectionTitleCap: {
-    fontSize: 11,
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    color: Colors.mutedSlate,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+    color: Colors.charcoal,
   },
-  sectionActionText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  sectionHeading: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  sectionSubCap: {
+  sectionSub: {
     fontSize: 12,
     color: Colors.mutedSlate,
+    marginTop: 2,
   },
-  nextBadge: {
-    backgroundColor: Colors.aquaTint,
+  servicesGrid: {
+    gap: 12,
+  },
+  serviceCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: Colors.hairlineBorder,
+  },
+  serviceTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  badgePill: {
+    backgroundColor: Colors.aquaMist,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
-  },
-  nextBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.primary,
-    letterSpacing: 0.6,
-  },
-  weekStripGrid: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 14,
-    padding: 6,
-    justifyContent: 'space-between',
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
+    borderColor: Colors.aquaTint,
   },
-  weekDayPill: {
-    flex: 1,
+  badgePillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  serviceDuration: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.mutedSlate,
+  },
+  serviceName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.charcoal,
+    marginBottom: 4,
+  },
+  serviceDesc: {
+    fontSize: 13,
+    color: Colors.mutedSlate,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  serviceFooter: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: Colors.hairlineBorder,
+    paddingTop: 12,
+  },
+  priceLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.mutedSlate,
+    textTransform: 'uppercase',
+  },
+  servicePrice: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.primary,
+  },
+  bookSmallBtn: {
+    backgroundColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 10,
   },
-  weekDayPillActive: {
-    backgroundColor: Colors.primaryContainer,
-    shadowColor: Colors.primaryContainer,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  weekDayLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: Colors.mutedSlate,
-  },
-  weekDayLabelActive: {
+  bookSmallBtnText: {
     color: Colors.onPrimary,
-    fontWeight: '700',
-  },
-  weekDayNum: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.onSurface,
-    marginTop: 3,
-  },
-  weekDayNumActive: {
-    color: Colors.onPrimary,
-    fontWeight: '700',
-  },
-  appointmentCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    shadowColor: Colors.primaryContainer,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 2,
-  },
-  cardHeaderStrip: {
-    backgroundColor: Colors.primaryContainer,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cardHeaderDate: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.onPrimary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  cardHeaderTime: {
     fontSize: 13,
-    fontWeight: '700',
-    color: Colors.onPrimary,
+    fontWeight: '600',
   },
-  cardBody: {
-    backgroundColor: 'rgba(207, 231, 229, 0.35)',
+  sanctuaryBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 14,
     padding: 16,
-    gap: 12,
-  },
-  cardMainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  therapistAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.secondaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: Colors.primaryContainer,
-  },
-  therapistInitial: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  cardInfo: {
-    flex: 1,
-  },
-  serviceNameTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.charcoal,
-  },
-  therapistLine: {
-    fontSize: 12,
-    color: Colors.onSecondaryContainer,
-    marginTop: 2,
-  },
-  therapistLineBold: {
-    fontWeight: '700',
-    color: Colors.charcoal,
-  },
-  confirmedStatusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: Colors.surfaceContainerLowest,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
+    marginTop: 20,
     borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
+    borderColor: Colors.aquaTint,
   },
-  confirmedDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.primaryContainer,
-  },
-  confirmedText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  locationText: {
-    fontSize: 12,
-    color: Colors.onSecondaryContainer,
+  sanctuaryTextWrap: {
     flex: 1,
   },
-  cardActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(15, 166, 173, 0.12)',
-  },
-  detailsLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  detailsLinkText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  utilBtnsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  utilBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.surfaceContainerLowest,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-  },
-  utilBtnText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.onSurfaceVariant,
-  },
-  servicesList: {
-    gap: 10,
-  },
-  serviceItemCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-  },
-  serviceLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  serviceIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: Colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  serviceTextBox: {
-    flex: 1,
-  },
-  serviceItemName: {
+  sanctuaryTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  serviceMetaText: {
-    fontSize: 12,
-    color: Colors.mutedSlate,
-    marginTop: 2,
-  },
-  servicePriceText: {
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  serviceBookButton: {
-    backgroundColor: Colors.secondaryContainer,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  serviceBookButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  historyCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-  },
-  historyLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  historyIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: Colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  historyTextBox: {
-    flex: 1,
-  },
-  historyName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.onSurface,
-  },
-  historySub: {
-    fontSize: 11,
-    color: Colors.mutedSlate,
-    marginTop: 1,
-  },
-  rebookBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.surfaceContainerLow,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  rebookBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  tipCard: {
-    backgroundColor: 'rgba(234, 246, 248, 0.7)',
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: 'row',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-  },
-  tipIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.surfaceContainerLowest,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  tipContent: {
-    flex: 1,
-  },
-  tipTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  tipText: {
-    fontSize: 12,
-    color: Colors.onSurfaceVariant,
-    lineHeight: 18,
-    marginTop: 2,
-  },
-  emptyCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    gap: 8,
-  },
-  emptyTitle: {
-    fontSize: 15,
-    fontWeight: '700',
     color: Colors.charcoal,
+    marginBottom: 4,
   },
-  emptyDesc: {
+  sanctuaryDesc: {
     fontSize: 12,
     color: Colors.mutedSlate,
-    textAlign: 'center',
-  },
-  emptyBookBtn: {
-    marginTop: 8,
-    backgroundColor: Colors.primaryContainer,
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  emptyBookBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.onPrimary,
+    lineHeight: 18,
   },
 });

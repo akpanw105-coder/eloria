@@ -4,103 +4,132 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TextInput,
   TouchableOpacity,
+  RefreshControl,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AppHeader } from '../../components/AppHeader';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 
 export default function AdminClientsScreen() {
-  const { allUsers, appointments } = useApp();
-  const [search, setSearch] = useState('');
+  const { allUsers, appointments, refreshAll, isLoading } = useApp();
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const clients = allUsers.filter((u) => u.role === 'customer');
+  const filteredClients = allUsers.filter(
+    (u) =>
+      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  const filteredClients = clients.filter((c) => {
-    return (
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.email.toLowerCase().includes(search.toLowerCase()) ||
-      c.phone.includes(search)
-    );
-  });
+  const getClientAppointmentCount = (clientId: string) =>
+    appointments.filter((a) => a.customerId === clientId).length;
+
+  const getClientTotalSpend = (clientId: string) =>
+    appointments
+      .filter((a) => a.customerId === clientId && a.paymentStatus === 'paid')
+      .reduce((sum, a) => sum + a.price, 0);
 
   return (
     <ScreenContainer>
-      <AppHeader title="Client Records" subtitle="Sanctuary" showBack onBack={() => {}} />
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Client Records</Text>
+        <Text style={styles.headerCount}>{allUsers.length} clients</Text>
+      </View>
 
-      <View style={styles.searchBar}>
-        <Ionicons name="search" size={18} color={Colors.tertiary} />
+      {/* Search Bar */}
+      <View style={styles.searchWrap}>
+        <Ionicons name="search-outline" size={18} color={Colors.mutedSlate} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search clients by name, email, or phone..."
-          placeholderTextColor={Colors.tertiary}
-          value={search}
-          onChangeText={setSearch}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search clients by name or email…"
+          placeholderTextColor={Colors.outline}
         />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Ionicons name="close-circle" size={18} color={Colors.mutedSlate} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} tintColor={Colors.primary} />}
       >
-        <Text style={styles.listCount}>
-          Registered Clients ({filteredClients.length})
-        </Text>
+        {filteredClients.length === 0 && (
+          <View style={styles.emptyBox}>
+            <Ionicons name="people-outline" size={40} color={Colors.outlineVariant} />
+            <Text style={styles.emptyText}>
+              {searchQuery ? 'No clients match your search.' : 'No client records found. Clients appear here after they register and sign in.'}
+            </Text>
+          </View>
+        )}
 
         {filteredClients.map((client) => {
-          const clientApts = appointments.filter((a) => a.customerId === client.id);
-          const totalSpent = clientApts
-            .filter((a) => a.paymentStatus === 'paid')
-            .reduce((s, a) => s + (a.paidAmount || 0), 0);
+          const aptCount = getClientAppointmentCount(client.id);
+          const totalSpend = getClientTotalSpend(client.id);
+          const initials = client.name
+            .split(' ')
+            .map((n) => n.charAt(0).toUpperCase())
+            .join('')
+            .slice(0, 2);
 
           return (
             <View key={client.id} style={styles.clientCard}>
-              <View style={styles.cardTop}>
-                <View style={styles.clientAvatar}>
-                  <Text style={styles.clientInitialText}>
-                    {client.name
-                      ?.split(' ')
-                      .map((p) => p[0])
-                      .join('')
-                      .slice(0, 2)
-                      .toUpperCase() || 'CL'}
-                  </Text>
-                </View>
-                <View style={styles.clientInfo}>
-                  <Text style={styles.clientName}>{client.name}</Text>
-                  <Text style={styles.clientEmail}>{client.email}</Text>
-                  <Text style={styles.clientPhone}>{client.phone || 'No phone recorded'}</Text>
+              <View style={styles.clientCardTop}>
+                <View
+                  style={[
+                    styles.avatarCircle,
+                    client.role === 'admin' && styles.avatarCircleAdmin,
+                  ]}
+                >
+                  <Text style={styles.avatarInitials}>{initials}</Text>
                 </View>
 
-                <View style={styles.spendTag}>
-                  <Text style={styles.spendVal}>${totalSpent}</Text>
-                  <Text style={styles.spendLabel}>LTV (Demo)</Text>
+                <View style={styles.clientInfo}>
+                  <View style={styles.clientNameRow}>
+                    <Text style={styles.clientName}>{client.name}</Text>
+                    {client.role === 'admin' && (
+                      <View style={styles.adminChip}>
+                        <Ionicons name="shield-checkmark" size={10} color={Colors.primary} />
+                        <Text style={styles.adminChipText}>Admin</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.clientEmail}>{client.email}</Text>
+                  {client.phone ? (
+                    <Text style={styles.clientPhone}>{client.phone}</Text>
+                  ) : null}
                 </View>
               </View>
 
-              {client.notes ? (
-                <View style={styles.notesBox}>
-                  <Text style={styles.notesLabel}>THERAPIST & CLINIC NOTES:</Text>
-                  <Text style={styles.notesText}>{client.notes}</Text>
+              <View style={styles.clientStatsRow}>
+                <View style={styles.clientStat}>
+                  <Text style={styles.clientStatNum}>{aptCount}</Text>
+                  <Text style={styles.clientStatLabel}>Total Bookings</Text>
                 </View>
-              ) : null}
-
-              <View style={styles.cardFooter}>
-                <Text style={styles.memberSince}>Member since {client.memberSince}</Text>
-                <Text style={styles.totalSessions}>
-                  {clientApts.length} Total {clientApts.length === 1 ? 'Booking' : 'Bookings'}
-                </Text>
+                <View style={styles.clientStatDivider} />
+                <View style={styles.clientStat}>
+                  <Text style={styles.clientStatNum}>
+                    ₦{Number(totalSpend).toLocaleString('en-NG')}
+                  </Text>
+                  <Text style={styles.clientStatLabel}>Total Paid</Text>
+                </View>
+                <View style={styles.clientStatDivider} />
+                <View style={styles.clientStat}>
+                  <Text style={styles.clientStatNum}>{client.memberSince}</Text>
+                  <Text style={styles.clientStatLabel}>Member Since</Text>
+                </View>
               </View>
             </View>
           );
         })}
-
-        <View style={{ height: 100 }} />
       </ScrollView>
 
       <AdminTabBar />
@@ -109,138 +138,96 @@ export default function AdminClientsScreen() {
 }
 
 const styles = StyleSheet.create({
-  searchBar: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surfaceContainerLowest,
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 6,
-    paddingHorizontal: 12,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.hairlineBorder,
+  },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.charcoal },
+  headerCount: { fontSize: 13, color: Colors.mutedSlate, fontWeight: '600' },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.hairlineBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 14,
     color: Colors.onSurface,
+    paddingVertical: 6,
   },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 24,
+  scrollView: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 16, paddingBottom: 90 },
+  emptyBox: {
+    alignItems: 'center',
+    paddingVertical: 48,
     gap: 12,
+    paddingHorizontal: 24,
   },
-  listCount: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.tertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  emptyText: {
+    fontSize: 13,
+    color: Colors.mutedSlate,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   clientCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    backgroundColor: '#ffffff',
     borderRadius: 14,
     padding: 14,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.hairlineBorder,
-    gap: 10,
   },
-  cardTop: {
+  clientCardTop: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginBottom: 12,
   },
-  clientAvatar: {
+  avatarCircle: {
     width: 46,
     height: 46,
     borderRadius: 23,
-    backgroundColor: Colors.secondaryContainer,
+    backgroundColor: Colors.primaryContainer,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: Colors.primaryContainer,
   },
-  clientInitialText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  clientInfo: {
-    flex: 1,
-  },
-  clientName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  clientEmail: {
-    fontSize: 12,
-    color: Colors.tertiary,
-    marginTop: 1,
-  },
-  clientPhone: {
-    fontSize: 11,
-    color: Colors.primary,
-    marginTop: 2,
-  },
-  spendTag: {
-    alignItems: 'flex-end',
-    backgroundColor: Colors.surfaceContainerLow,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  spendVal: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: Colors.primary,
-  },
-  spendLabel: {
-    fontSize: 9,
-    color: Colors.tertiary,
-    fontWeight: '600',
-  },
-  notesBox: {
-    backgroundColor: Colors.aquaMist,
-    padding: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(15, 166, 173, 0.2)',
-    gap: 2,
-  },
-  notesLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: Colors.primary,
-    letterSpacing: 0.5,
-  },
-  notesText: {
-    fontSize: 11,
-    color: Colors.onSurfaceVariant,
-    lineHeight: 16,
-  },
-  cardFooter: {
+  avatarCircleAdmin: { backgroundColor: Colors.primary },
+  avatarInitials: { fontSize: 16, fontWeight: '800', color: Colors.onPrimary },
+  clientInfo: { flex: 1 },
+  clientNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  clientName: { fontSize: 14, fontWeight: '700', color: Colors.charcoal },
+  adminChip: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 8,
+    gap: 3,
+    backgroundColor: Colors.aquaTint,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  adminChipText: { fontSize: 9, fontWeight: '700', color: Colors.primary },
+  clientEmail: { fontSize: 12, color: Colors.mutedSlate, marginTop: 2 },
+  clientPhone: { fontSize: 12, color: Colors.mutedSlate, marginTop: 1 },
+  clientStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: Colors.hairlineBorder,
+    paddingTop: 10,
   },
-  memberSince: {
-    fontSize: 11,
-    color: Colors.mutedSlate,
-  },
-  totalSessions: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.charcoal,
-  },
+  clientStat: { flex: 1, alignItems: 'center' },
+  clientStatNum: { fontSize: 13, fontWeight: '700', color: Colors.charcoal },
+  clientStatLabel: { fontSize: 10, color: Colors.mutedSlate, marginTop: 2, textAlign: 'center' },
+  clientStatDivider: { width: 1, height: 28, backgroundColor: Colors.hairlineBorder },
 });

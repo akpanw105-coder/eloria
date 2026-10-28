@@ -3,30 +3,19 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { router, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
-import { useApp } from '../context/AppContext';
 
 export const CustomerTabBar: React.FC = () => {
   const pathname = usePathname();
-  const { notifications } = useApp();
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   const tabs: Array<{
     route: string;
     label: string;
     icon: keyof typeof Ionicons.glyphMap;
     activeIcon: keyof typeof Ionicons.glyphMap;
-    badge?: number;
   }> = [
     { route: '/', label: 'Home', icon: 'home-outline', activeIcon: 'home' },
-    { route: '/services', label: 'Services', icon: 'leaf-outline', activeIcon: 'leaf' },
-    { route: '/bookings', label: 'Bookings', icon: 'calendar-outline', activeIcon: 'calendar' },
-    {
-      route: '/notifications',
-      label: 'Alerts',
-      icon: 'notifications-outline',
-      activeIcon: 'notifications',
-      badge: unreadCount,
-    },
+    { route: '/book', label: 'Book Now', icon: 'calendar-outline', activeIcon: 'calendar' },
+    { route: '/bookings', label: 'My Bookings', icon: 'time-outline', activeIcon: 'time' },
     { route: '/profile', label: 'Profile', icon: 'person-outline', activeIcon: 'person' },
   ];
 
@@ -37,7 +26,7 @@ export const CustomerTabBar: React.FC = () => {
           const isActive =
             tab.route === '/'
               ? pathname === '/'
-              : pathname.startsWith(tab.route);
+              : pathname === tab.route;
 
           return (
             <TouchableOpacity
@@ -50,15 +39,8 @@ export const CustomerTabBar: React.FC = () => {
                 <Ionicons
                   name={isActive ? tab.activeIcon : tab.icon}
                   size={22}
-                  color={isActive ? Colors.primaryContainer : Colors.mutedSlate}
+                  color={isActive ? Colors.primary : Colors.mutedSlate}
                 />
-                {tab.badge !== undefined && tab.badge > 0 && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
-                      {tab.badge > 9 ? '9+' : tab.badge}
-                    </Text>
-                  </View>
-                )}
               </View>
               <Text
                 style={[
@@ -83,7 +65,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
     borderTopWidth: 1,
     borderTopColor: Colors.hairlineBorder,
     shadowColor: Colors.charcoal,
@@ -95,15 +77,16 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: 'row',
-    height: 62,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'space-around',
     paddingHorizontal: 8,
+    paddingBottom: 4,
   },
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 54,
+    flex: 1,
     height: '100%',
     position: 'relative',
   },
@@ -111,6 +94,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     height: 26,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   tabLabel: {
     fontSize: 11,
@@ -119,31 +103,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   activeTabLabel: {
-    color: Colors.primaryContainer,
+    color: Colors.primary,
     fontWeight: '700',
   },
   activeDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: Colors.primaryContainer,
-    marginTop: 3,
-  },
-  badge: {
-    position: 'absolute',
-    top: -2,
-    right: -8,
-    backgroundColor: Colors.primaryContainer,
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    height: 14,
-    minWidth: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeText: {
-    color: Colors.onPrimary,
-    fontSize: 9,
-    fontWeight: '700',
+    backgroundColor: Colors.primary,
+    marginTop: 2,
   },
 });

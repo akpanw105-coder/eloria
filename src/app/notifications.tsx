@@ -1,184 +1,80 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Switch,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AppHeader } from '../components/AppHeader';
 import { CustomerTabBar } from '../components/CustomerTabBar';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Colors } from '../constants/theme';
 import { useApp } from '../context/AppContext';
 
 export default function NotificationsScreen() {
-  const {
-    notifications,
-    notificationSettings,
-    markNotificationRead,
-    markAllNotificationsRead,
-    updateNotificationPreferences,
-  } = useApp();
-  const [activeTab, setActiveTab] = useState<'feed' | 'settings'>('feed');
+  const { notifications, markNotificationRead, markAllNotificationsRead, refreshAll, isLoading } = useApp();
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const iconForType = (type: string): keyof typeof Ionicons.glyphMap => {
+    switch (type) {
+      case 'payment': return 'card-outline';
+      case 'reminder': return 'alarm-outline';
+      case 'system': return 'settings-outline';
+      default: return 'calendar-outline';
+    }
+  };
 
   return (
     <ScreenContainer>
-      <AppHeader title="Notifications" subtitle="Alerts" />
-
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'feed' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('feed')}
-        >
-          <Ionicons
-            name="notifications-outline"
-            size={16}
-            color={activeTab === 'feed' ? Colors.onPrimary : Colors.tertiary}
-          />
-          <Text style={[styles.tabText, activeTab === 'feed' && styles.tabTextActive]}>
-            Activity Feed
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'settings' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('settings')}
-        >
-          <Ionicons
-            name="settings-outline"
-            size={16}
-            color={activeTab === 'settings' ? Colors.onPrimary : Colors.tertiary}
-          />
-          <Text style={[styles.tabText, activeTab === 'settings' && styles.tabTextActive]}>
-            Reminder Settings
-          </Text>
-        </TouchableOpacity>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Notifications</Text>
+        {unreadCount > 0 && (
+          <TouchableOpacity style={styles.markAllBtn} onPress={markAllNotificationsRead}>
+            <Text style={styles.markAllBtnText}>Mark All Read</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} tintColor={Colors.primary} />}
       >
-        {activeTab === 'feed' ? (
-          <>
-            {notifications.some((n) => !n.isRead) && (
-              <View style={styles.markAllRow}>
-                <TouchableOpacity onPress={markAllNotificationsRead}>
-                  <Text style={styles.markAllText}>Mark all as read</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {notifications.length === 0 ? (
-              <View style={styles.emptyContainer}>
-                <Ionicons name="notifications-off-outline" size={38} color={Colors.mutedSlate} />
-                <Text style={styles.emptyTitle}>No notifications</Text>
-                <Text style={styles.emptySub}>
-                  You're all caught up with your sanctuary bookings.
-                </Text>
-              </View>
-            ) : (
-              notifications.map((notif) => (
-                <TouchableOpacity
-                  key={notif.id}
-                  style={[styles.notifCard, !notif.isRead && styles.notifCardUnread]}
-                  onPress={() => markNotificationRead(notif.id)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.notifIconCircle}>
-                    <Ionicons
-                      name={
-                        notif.type === 'booking'
-                          ? 'calendar'
-                          : notif.type === 'reminder'
-                          ? 'water'
-                          : notif.type === 'payment'
-                          ? 'receipt-outline'
-                          : 'information-circle-outline'
-                      }
-                      size={20}
-                      color={Colors.primaryContainer}
-                    />
-                  </View>
-
-                  <View style={styles.notifContent}>
-                    <View style={styles.notifTitleRow}>
-                      <Text style={styles.notifTitle}>{notif.title}</Text>
-                      {!notif.isRead && <View style={styles.unreadDot} />}
-                    </View>
-                    <Text style={styles.notifMessage}>{notif.message}</Text>
-                    <Text style={styles.notifTime}>{notif.timeAgo}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))
-            )}
-          </>
-        ) : (
-          <View style={styles.settingsBox}>
-            <View style={styles.demoNotice}>
-              <Ionicons name="sparkles" size={18} color={Colors.primary} />
-              <Text style={styles.demoNoticeText}>
-                Demo Notification Layer: Configured for in-app alert simulation. No external SMS/email
-                gateways required.
-              </Text>
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextCol}>
-                <Text style={styles.settingTitle}>Email Appointment Summaries</Text>
-                <Text style={styles.settingSub}>Receive detailed receipts & therapist notes</Text>
-              </View>
-              <Switch
-                value={notificationSettings?.emailReminders ?? true}
-                onValueChange={(val) => updateNotificationPreferences({ emailReminders: val })}
-                trackColor={{ false: Colors.surfaceContainer, true: Colors.primaryContainer }}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextCol}>
-                <Text style={styles.settingTitle}>SMS Arrival & Timing Alerts</Text>
-                <Text style={styles.settingSub}>Short text alerts 2 hours before session</Text>
-              </View>
-              <Switch
-                value={notificationSettings?.smsAlerts ?? true}
-                onValueChange={(val) => updateNotificationPreferences({ smsAlerts: val })}
-                trackColor={{ false: Colors.surfaceContainer, true: Colors.primaryContainer }}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextCol}>
-                <Text style={styles.settingTitle}>Booking & Status Updates</Text>
-                <Text style={styles.settingSub}>Immediate alerts for changes & re-bookings</Text>
-              </View>
-              <Switch
-                value={notificationSettings?.bookingUpdates ?? true}
-                onValueChange={(val) => updateNotificationPreferences({ bookingUpdates: val })}
-                trackColor={{ false: Colors.surfaceContainer, true: Colors.primaryContainer }}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingTextCol}>
-                <Text style={styles.settingTitle}>Seasonal Wellness Offers</Text>
-                <Text style={styles.settingSub}>Exclusive member retreats & package pricing</Text>
-              </View>
-              <Switch
-                value={notificationSettings?.promotions ?? false}
-                onValueChange={(val) => updateNotificationPreferences({ promotions: val })}
-                trackColor={{ false: Colors.surfaceContainer, true: Colors.primaryContainer }}
-              />
-            </View>
+        {notifications.length === 0 && (
+          <View style={styles.emptyBox}>
+            <Ionicons name="notifications-off-outline" size={48} color={Colors.outlineVariant} />
+            <Text style={styles.emptyTitle}>No Notifications</Text>
+            <Text style={styles.emptySub}>Booking updates and reminders will appear here.</Text>
           </View>
         )}
 
-        <View style={{ height: 100 }} />
+        {notifications.map((notification) => (
+          <TouchableOpacity
+            key={notification.id}
+            style={[styles.notifCard, !notification.isRead && styles.notifCardUnread]}
+            onPress={() => !notification.isRead && markNotificationRead(notification.id)}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.iconBox, !notification.isRead && styles.iconBoxUnread]}>
+              <Ionicons
+                name={iconForType(notification.type)}
+                size={18}
+                color={!notification.isRead ? Colors.onPrimary : Colors.primary}
+              />
+            </View>
+            <View style={styles.notifBody}>
+              <View style={styles.notifTitleRow}>
+                <Text style={styles.notifTitle}>{notification.title}</Text>
+                {!notification.isRead && <View style={styles.unreadDot} />}
+              </View>
+              <Text style={styles.notifMessage}>{notification.message}</Text>
+              <Text style={styles.notifTime}>{notification.timeAgo}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
       </ScrollView>
 
       <CustomerTabBar />
@@ -187,167 +83,56 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  tabContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 10,
-    backgroundColor: Colors.background,
-  },
-  tabButton: {
-    flex: 1,
+  header: {
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    gap: 6,
-  },
-  tabButtonActive: {
-    backgroundColor: Colors.primaryContainer,
-    borderColor: Colors.primaryContainer,
-  },
-  tabText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.tertiary,
-  },
-  tabTextActive: {
-    color: Colors.onPrimary,
-    fontWeight: '700',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 24,
-    gap: 12,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.hairlineBorder,
   },
-  markAllRow: {
-    alignItems: 'flex-end',
-    paddingBottom: 4,
+  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.charcoal },
+  markAllBtn: {
+    backgroundColor: Colors.aquaTint,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  markAllText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
+  markAllBtnText: { fontSize: 12, fontWeight: '700', color: Colors.primary },
+  scrollView: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 16, paddingBottom: 90 },
+  emptyBox: { alignItems: 'center', paddingVertical: 60, gap: 10 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.charcoal },
+  emptySub: { fontSize: 13, color: Colors.mutedSlate, textAlign: 'center' },
   notifCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: '#ffffff',
     borderRadius: 14,
     padding: 14,
-    flexDirection: 'row',
-    gap: 12,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: Colors.hairlineBorder,
-    shadowColor: Colors.charcoal,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
   },
   notifCardUnread: {
+    borderColor: Colors.primary + '40',
     backgroundColor: Colors.aquaMist,
-    borderColor: 'rgba(15, 166, 173, 0.3)',
   },
-  notifIconCircle: {
+  iconBox: {
     width: 38,
     height: 38,
-    borderRadius: 12,
-    backgroundColor: Colors.surfaceContainerLow,
+    borderRadius: 19,
+    backgroundColor: Colors.aquaTint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  notifContent: {
-    flex: 1,
-  },
-  notifTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  notifTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.primaryContainer,
-  },
-  notifMessage: {
-    fontSize: 12,
-    color: Colors.onSurfaceVariant,
-    lineHeight: 18,
-    marginTop: 3,
-  },
-  notifTime: {
-    fontSize: 11,
-    color: Colors.tertiary,
-    marginTop: 6,
-  },
-  emptyContainer: {
-    paddingVertical: 60,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  emptySub: {
-    fontSize: 13,
-    color: Colors.mutedSlate,
-  },
-  settingsBox: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    gap: 16,
-  },
-  demoNotice: {
-    backgroundColor: Colors.aquaTint,
-    borderRadius: 10,
-    padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  demoNoticeText: {
-    fontSize: 11,
-    color: Colors.primary,
-    fontWeight: '600',
-    flex: 1,
-    lineHeight: 16,
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  settingTextCol: {
-    flex: 1,
-    marginRight: 12,
-  },
-  settingTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  settingSub: {
-    fontSize: 11,
-    color: Colors.tertiary,
-    marginTop: 2,
-  },
+  iconBoxUnread: { backgroundColor: Colors.primary },
+  notifBody: { flex: 1 },
+  notifTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  notifTitle: { fontSize: 14, fontWeight: '700', color: Colors.charcoal, flex: 1 },
+  unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.primary },
+  notifMessage: { fontSize: 12, color: Colors.mutedSlate, marginTop: 4, lineHeight: 17 },
+  notifTime: { fontSize: 11, color: Colors.outline, marginTop: 4 },
 });

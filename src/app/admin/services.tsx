@@ -5,228 +5,272 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Switch,
-  Modal,
   TextInput,
   Alert,
+  Switch,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { AppHeader } from '../../components/AppHeader';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 import { MassageService } from '../../types';
+import { formatNaira } from '../../mock/initialData';
 
 export default function AdminServicesScreen() {
   const { services, saveService, toggleService } = useApp();
   const [modalVisible, setModalVisible] = useState(false);
-  const [editingService, setEditingService] = useState<MassageService | null>(null);
+  const [editingService, setEditingService] = useState<Partial<MassageService> | null>(null);
 
   // Form state
-  const [name, setName] = useState('');
-  const [tagline, setTagline] = useState('');
-  const [description, setDescription] = useState('');
-  const [durationMinutes, setDurationMinutes] = useState('60');
-  const [price, setPrice] = useState('95');
-  const [badge, setBadge] = useState('Therapeutic');
+  const [formName, setFormName] = useState('');
+  const [formPrice, setFormPrice] = useState('');
+  const [formDuration, setFormDuration] = useState('60');
+  const [formTagline, setFormTagline] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formBadge, setFormBadge] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const openAddModal = () => {
     setEditingService(null);
-    setName('');
-    setTagline('');
-    setDescription('');
-    setDurationMinutes('60');
-    setPrice('95');
-    setBadge('Therapeutic • Relaxing');
+    setFormName('');
+    setFormPrice('');
+    setFormDuration('60');
+    setFormTagline('');
+    setFormDescription('');
+    setFormBadge('');
     setModalVisible(true);
   };
 
-  const openEditModal = (service: MassageService) => {
-    setEditingService(service);
-    setName(service.name);
-    setTagline(service.tagline);
-    setDescription(service.description);
-    setDurationMinutes(service.durationMinutes.toString());
-    setPrice(service.price.toString());
-    setBadge(service.badge);
+  const openEditModal = (svc: MassageService) => {
+    setEditingService(svc);
+    setFormName(svc.name);
+    setFormPrice(svc.price.toString());
+    setFormDuration(svc.durationMinutes.toString());
+    setFormTagline(svc.tagline || '');
+    setFormDescription(svc.description || '');
+    setFormBadge(svc.badge || '');
     setModalVisible(true);
   };
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Required Field', 'Please enter a treatment name.');
+    if (!formName.trim()) {
+      Alert.alert('Required', 'Service name cannot be blank.');
       return;
     }
-    await saveService({
-      ...(editingService ? { id: editingService.id } : {}),
-      name: name.trim(),
-      tagline: tagline.trim(),
-      description: description.trim(),
-      durationMinutes: parseInt(durationMinutes, 10) || 60,
-      price: parseFloat(price) || 85,
-      badge: badge.trim(),
-      isActive: editingService ? editingService.isActive : true,
-    });
-    setModalVisible(false);
+    const priceNum = parseFloat(formPrice);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      Alert.alert('Invalid Price', 'Enter a valid price in Naira (e.g. 25000).');
+      return;
+    }
+    const durationNum = parseInt(formDuration, 10);
+    if (isNaN(durationNum) || durationNum <= 0) {
+      Alert.alert('Invalid Duration', 'Enter session duration in minutes.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await saveService({
+        id: editingService?.id,
+        name: formName.trim(),
+        price: priceNum,
+        durationMinutes: durationNum,
+        tagline: formTagline.trim(),
+        description: formDescription.trim(),
+        badge: formBadge.trim(),
+        isActive: editingService?.isActive ?? true,
+      });
+      setModalVisible(false);
+      Alert.alert('Saved', `${formName} has been ${editingService?.id ? 'updated' : 'added'} successfully.`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save service.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleToggle = async (svc: MassageService) => {
+    const action = svc.isActive ? 'deactivate' : 'reactivate';
+    Alert.alert(
+      `${action.charAt(0).toUpperCase() + action.slice(1)} Service`,
+      `${action.charAt(0).toUpperCase() + action.slice(1)} "${svc.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: action.charAt(0).toUpperCase() + action.slice(1),
+          onPress: async () => {
+            try {
+              await toggleService(svc.id);
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to update service status.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
     <ScreenContainer>
-      <AppHeader title="Service Management" subtitle="Catalog" showBack onBack={() => {}} />
-
-      <View style={styles.topActionRow}>
-        <Text style={styles.catalogHeading}>Therapies & Pricing ({services.length})</Text>
-        <TouchableOpacity style={styles.addServiceBtn} onPress={openAddModal}>
-          <Ionicons name="add" size={16} color={Colors.onPrimary} />
-          <Text style={styles.addServiceBtnText}>New Service</Text>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Massage Services</Text>
+        <TouchableOpacity style={styles.addBtn} onPress={openAddModal} activeOpacity={0.8}>
+          <Ionicons name="add" size={18} color={Colors.onPrimary} />
+          <Text style={styles.addBtnText}>Add Service</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {services.map((item) => (
-          <View key={item.id} style={styles.serviceRowCard}>
-            <View style={styles.cardHeader}>
-              <View style={styles.headerLeft}>
-                <View style={styles.iconContainer}>
-                  <Ionicons name="sparkles" size={18} color={Colors.primaryContainer} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.serviceName}>{item.name}</Text>
-                  <Text style={styles.serviceBadge}>{item.badge}</Text>
-                </View>
-              </View>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        <View style={styles.pricingNote}>
+          <Ionicons name="information-circle-outline" size={16} color={Colors.primary} />
+          <Text style={styles.pricingNoteText}>
+            All prices are displayed in Nigerian Naira (₦). Clients see the prices shown below.
+          </Text>
+        </View>
 
-              <Switch
-                value={item.isActive}
-                onValueChange={() => toggleService(item.id)}
-                trackColor={{ false: Colors.surfaceContainer, true: Colors.primaryContainer }}
-              />
+        {services.map((svc) => (
+          <View key={svc.id} style={[styles.serviceCard, !svc.isActive && styles.serviceCardInactive]}>
+            <View style={styles.serviceCardTop}>
+              <View style={styles.serviceCardLeft}>
+                <Text style={[styles.serviceName, !svc.isActive && styles.serviceNameInactive]}>
+                  {svc.name}
+                </Text>
+                <Text style={styles.serviceTagline}>{svc.tagline}</Text>
+              </View>
+              <View style={styles.serviceCardRight}>
+                <Text style={styles.servicePrice}>{formatNaira(svc.price)}</Text>
+                <Text style={styles.serviceDuration}>{svc.durationMinutes} min</Text>
+              </View>
             </View>
 
-            <Text style={styles.serviceDesc} numberOfLines={2}>
-              {item.description}
-            </Text>
+            {svc.badge ? (
+              <View style={styles.badgePill}>
+                <Text style={styles.badgePillText}>{svc.badge}</Text>
+              </View>
+            ) : null}
 
-            <View style={styles.cardFooter}>
-              <View style={styles.metaRow}>
-                <Text style={styles.metaDuration}>{item.durationMinutes} Minutes</Text>
-                <Text style={styles.metaPrice}>${item.price}.00</Text>
-                <Text
-                  style={[
-                    styles.activeStateText,
-                    item.isActive ? { color: Colors.success } : { color: Colors.mutedSlate },
-                  ]}
-                >
-                  {item.isActive ? 'Active in Booking' : 'Hidden from Catalog'}
-                </Text>
+            {svc.description ? (
+              <Text style={styles.serviceDesc} numberOfLines={2}>{svc.description}</Text>
+            ) : null}
+
+            <View style={styles.serviceCardActions}>
+              <View style={styles.toggleWrap}>
+                <Switch
+                  value={svc.isActive}
+                  onValueChange={() => handleToggle(svc)}
+                  trackColor={{ false: Colors.outlineVariant, true: Colors.primaryContainer }}
+                  thumbColor={svc.isActive ? Colors.primary : Colors.mutedSlate}
+                />
+                <Text style={styles.toggleLabel}>{svc.isActive ? 'Active' : 'Inactive'}</Text>
               </View>
 
               <TouchableOpacity
                 style={styles.editBtn}
-                onPress={() => openEditModal(item)}
+                onPress={() => openEditModal(svc)}
+                activeOpacity={0.8}
               >
-                <Ionicons name="create-outline" size={14} color={Colors.primary} />
+                <Ionicons name="create-outline" size={15} color={Colors.primary} />
                 <Text style={styles.editBtnText}>Edit</Text>
               </TouchableOpacity>
             </View>
           </View>
         ))}
-
-        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Edit / Create Modal */}
+      {/* Add / Edit Modal */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={styles.modalBox}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingService ? 'Edit Treatment' : 'Add New Massage Therapy'}
-              </Text>
+              <Text style={styles.modalTitle}>{editingService?.id ? 'Edit Service' : 'Add New Service'}</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={22} color={Colors.onSurface} />
+                <Ionicons name="close" size={22} color={Colors.charcoal} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.formContent}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>TREATMENT NAME</Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Service Name *</Text>
                 <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Deep Tissue Myofascial Release"
-                  placeholderTextColor={Colors.tertiary}
-                  value={name}
-                  onChangeText={setName}
+                  style={styles.formInput}
+                  value={formName}
+                  onChangeText={setFormName}
+                  placeholder="e.g. Swedish Massage"
+                  placeholderTextColor={Colors.outline}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>TAGLINE / SUMMARY</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. 75 min deep tension release"
-                  placeholderTextColor={Colors.tertiary}
-                  value={tagline}
-                  onChangeText={setTagline}
-                />
-              </View>
-
-              <View style={styles.rowTwoInputs}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.inputLabel}>DURATION (MIN)</Text>
+              <View style={styles.formRow}>
+                <View style={[styles.formGroup, { flex: 1 }]}>
+                  <Text style={styles.formLabel}>Price (₦) *</Text>
                   <TextInput
-                    style={styles.input}
+                    style={styles.formInput}
+                    value={formPrice}
+                    onChangeText={setFormPrice}
+                    keyboardType="numeric"
+                    placeholder="25000"
+                    placeholderTextColor={Colors.outline}
+                  />
+                </View>
+
+                <View style={[styles.formGroup, { flex: 1 }]}>
+                  <Text style={styles.formLabel}>Duration (minutes) *</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    value={formDuration}
+                    onChangeText={setFormDuration}
+                    keyboardType="numeric"
                     placeholder="60"
-                    placeholderTextColor={Colors.tertiary}
-                    keyboardType="numeric"
-                    value={durationMinutes}
-                    onChangeText={setDurationMinutes}
-                  />
-                </View>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
-                  <Text style={styles.inputLabel}>PRICE ($ USD)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="95"
-                    placeholderTextColor={Colors.tertiary}
-                    keyboardType="numeric"
-                    value={price}
-                    onChangeText={setPrice}
+                    placeholderTextColor={Colors.outline}
                   />
                 </View>
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>BADGE TAG</Text>
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Short Tagline</Text>
                 <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Most Popular • Restorative"
-                  placeholderTextColor={Colors.tertiary}
-                  value={badge}
-                  onChangeText={setBadge}
+                  style={styles.formInput}
+                  value={formTagline}
+                  onChangeText={setFormTagline}
+                  placeholder="Brief session description"
+                  placeholderTextColor={Colors.outline}
                 />
               </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>FULL CLINICAL DESCRIPTION</Text>
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Full Description</Text>
                 <TextInput
-                  style={[styles.input, { height: 70, textAlignVertical: 'top', paddingTop: 8 }]}
+                  style={[styles.formInput, styles.formTextArea]}
+                  value={formDescription}
+                  onChangeText={setFormDescription}
+                  placeholder="Detailed treatment description"
+                  placeholderTextColor={Colors.outline}
                   multiline
-                  placeholder="Description of the modality, techniques and physiological benefits..."
-                  placeholderTextColor={Colors.tertiary}
-                  value={description}
-                  onChangeText={setDescription}
+                  numberOfLines={3}
                 />
               </View>
 
-              <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSave}>
-                <Text style={styles.saveSubmitBtnText}>
-                  {editingService ? 'Save Changes' : 'Create Treatment'}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Badge Label</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={formBadge}
+                  onChangeText={setFormBadge}
+                  placeholder="e.g. Most Popular"
+                  placeholderTextColor={Colors.outline}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}
+                onPress={handleSave}
+                disabled={isSaving}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.saveBtnText}>
+                  {isSaving ? 'Saving…' : editingService?.id ? 'Update Service' : 'Add Service'}
                 </Text>
               </TouchableOpacity>
             </ScrollView>
@@ -240,183 +284,147 @@ export default function AdminServicesScreen() {
 }
 
 const styles = StyleSheet.create({
-  topActionRow: {
+  header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.hairlineBorder,
   },
-  catalogHeading: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  addServiceBtn: {
+  headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.charcoal },
+  addBtn: {
+    backgroundColor: Colors.primary,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.primaryContainer,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
   },
-  addServiceBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.onPrimary,
+  addBtnText: { color: Colors.onPrimary, fontSize: 12, fontWeight: '700' },
+  scrollView: { flex: 1, backgroundColor: Colors.background },
+  content: { padding: 16, paddingBottom: 90 },
+  pricingNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.aquaTint,
   },
-  scrollView: {
-    flex: 1,
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    gap: 12,
-  },
-  serviceRowCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
+  pricingNoteText: { flex: 1, fontSize: 12, color: Colors.primary, lineHeight: 17 },
+  serviceCard: {
+    backgroundColor: '#ffffff',
     borderRadius: 14,
     padding: 14,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: Colors.hairlineBorder,
-    gap: 8,
   },
-  cardHeader: {
+  serviceCardInactive: {
+    opacity: 0.55,
+    borderStyle: 'dashed',
+  },
+  serviceCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    marginBottom: 6,
   },
-  headerLeft: {
+  serviceCardLeft: { flex: 1, paddingRight: 8 },
+  serviceCardRight: { alignItems: 'flex-end' },
+  serviceName: { fontSize: 15, fontWeight: '700', color: Colors.charcoal },
+  serviceNameInactive: { color: Colors.mutedSlate },
+  serviceTagline: { fontSize: 11, color: Colors.mutedSlate, marginTop: 2 },
+  servicePrice: { fontSize: 16, fontWeight: '800', color: Colors.primary },
+  serviceDuration: { fontSize: 11, color: Colors.mutedSlate },
+  badgePill: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 6,
+  },
+  badgePillText: { fontSize: 10, fontWeight: '700', color: Colors.primary },
+  serviceDesc: { fontSize: 12, color: Colors.mutedSlate, lineHeight: 17, marginBottom: 10 },
+  serviceCardActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: Colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  serviceName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  serviceBadge: {
-    fontSize: 11,
-    color: Colors.primary,
-    marginTop: 1,
-  },
-  serviceDesc: {
-    fontSize: 12,
-    color: Colors.tertiary,
-    lineHeight: 17,
-  },
-  cardFooter: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: Colors.hairlineBorder,
+    paddingTop: 10,
+    marginTop: 2,
   },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  metaDuration: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.tertiary,
-  },
-  metaPrice: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  activeStateText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
+  toggleWrap: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  toggleLabel: { fontSize: 12, color: Colors.mutedSlate, fontWeight: '600' },
   editBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: Colors.surfaceContainerLow,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: Colors.aquaTint,
   },
-  editBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
+  editBtnText: { fontSize: 12, fontWeight: '700', color: Colors.primary },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(18, 29, 31, 0.45)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
   },
-  modalCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
+  modalBox: {
+    backgroundColor: '#ffffff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
-    maxHeight: '88%',
+    maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 18,
   },
-  modalTitle: {
-    fontSize: 16,
+  modalTitle: { fontSize: 17, fontWeight: '700', color: Colors.charcoal },
+  formGroup: { marginBottom: 14 },
+  formRow: { flexDirection: 'row', gap: 10 },
+  formLabel: {
+    fontSize: 12,
     fontWeight: '700',
-    color: Colors.onSurface,
+    color: Colors.onSurfaceVariant,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
-  formContent: {
-    gap: 12,
-    paddingBottom: 20,
-  },
-  inputGroup: {
-    gap: 4,
-  },
-  inputLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.tertiary,
-    letterSpacing: 0.8,
-  },
-  input: {
-    backgroundColor: Colors.surfaceContainerLow,
+  formInput: {
+    backgroundColor: Colors.aquaMist,
     borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 42,
-    fontSize: 13,
-    color: Colors.onSurface,
     borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
+    borderColor: Colors.outlineVariant,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: Colors.onSurface,
   },
-  rowTwoInputs: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  saveSubmitBtn: {
-    backgroundColor: Colors.primaryContainer,
+  formTextArea: { height: 70, textAlignVertical: 'top', paddingTop: 10 },
+  saveBtn: {
+    backgroundColor: Colors.primary,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 6,
+    marginBottom: 10,
   },
-  saveSubmitBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.onPrimary,
-  },
+  saveBtnDisabled: { opacity: 0.5 },
+  saveBtnText: { color: Colors.onPrimary, fontSize: 15, fontWeight: '700' },
 });

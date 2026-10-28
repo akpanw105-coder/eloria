@@ -7,7 +7,6 @@ import {
   Appointment,
   ClientReview,
   NotificationItem,
-  NotificationSettings,
   ClinicAvailabilitySettings,
 } from '../types';
 import { supabase } from '../lib/supabase';
@@ -22,7 +21,6 @@ interface AppContextType {
   appointments: Appointment[];
   reviews: ClientReview[];
   notifications: NotificationItem[];
-  notificationSettings: NotificationSettings | null;
   clinicAvailability: ClinicAvailabilitySettings | null;
   isLoading: boolean;
   authError: string | null;
@@ -30,23 +28,26 @@ interface AppContextType {
   // Actions
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ success: boolean; error?: string }>;
-  loginAs: (role: 'customer' | 'admin', email?: string) => Promise<void>;
   logout: () => Promise<void>;
-  createBooking: (
-    data: Omit<Appointment, 'id' | 'createdAt' | 'paymentStatus'> & {
-      paymentStatus?: Appointment['paymentStatus'];
-    }
-  ) => Promise<Appointment>;
-  updateBookingStatus: (id: string, status: Appointment['status']) => Promise<void>;
-  rescheduleBooking: (id: string, newDate: string, newTimeSlot: string) => Promise<void>;
+  createBooking: (data: {
+    serviceId: string;
+    therapistId: string | null;
+    date: string;
+    timeSlot: string;
+    price: number;
+    notes?: string;
+    paymentMethod: Appointment['paymentMethod'];
+    paymentStatus?: Appointment['paymentStatus'];
+    status?: Appointment['status'];
+  }) => Promise<Appointment>;
+  updateBookingStatus: (id: string, status: Appointment['status'], adminNotes?: string, therapistId?: string | null) => Promise<void>;
+  rescheduleBooking: (id: string, newDate: string, newTimeSlot: string, therapistId?: string | null) => Promise<void>;
   submitReview: (review: Omit<ClientReview, 'id' | 'createdAt'>) => Promise<void>;
   saveService: (service: Partial<MassageService> & { name: string; price: number; durationMinutes: number }) => Promise<void>;
   toggleService: (id: string) => Promise<void>;
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
-  updateNotificationPreferences: (settings: Partial<NotificationSettings>) => Promise<void>;
   updateClinicSettings: (settings: Partial<ClinicAvailabilitySettings>) => Promise<void>;
-  resetDemoData: () => Promise<void>;
   refreshAll: () => Promise<void>;
 }
 
@@ -61,7 +62,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [reviews, setReviews] = useState<ClientReview[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings | null>(null);
   const [clinicAvailability, setClinicAvailability] = useState<ClinicAvailabilitySettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -84,20 +84,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // Load user-specific data (appointments, notifications, settings, or admin full data)
+  // Load user-specific data (appointments, notifications, or admin full data)
   const loadUserData = useCallback(async (user: User) => {
     try {
       const isAdmin = user.role === 'admin';
-      const [apts, notifs, ns, profiles] = await Promise.all([
+      const [apts, notifs, profiles] = await Promise.all([
         EloriaApi.getAppointments(user.id, isAdmin),
         EloriaApi.getNotifications(user.id),
-        EloriaApi.getNotificationSettings(user.id),
         isAdmin ? EloriaApi.getAllProfiles() : Promise.resolve([user]),
       ]);
 
       setAppointments(apts);
       setNotifications(notifs);
-      setNotificationSettings(ns);
+
       if (isAdmin) {
         setAllUsers(profiles);
       } else {
@@ -120,33 +119,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setAuthUser(session.user);
     const userId = session.user.id;
+    const userEmail = session.user.email || '';
+
+    // Enforce role: admin@gmail.com is strictly admin
+    const isDedicatedAdmin = userEmail.toLowerCase() === 'admin@gmail.com';
 
     // Fetch profile from database
     let profile = await EloriaApi.getProfile(userId);
 
-    // If trigger hasn't finished yet or record not found, retry once or use metadata
     if (!profile) {
-      await new Promise((r) => setTimeout(r, 600));
-      profile = await EloriaApi.getProfile(userId);
-    }
-
-    if (!profile) {
-      // Fallback constructed user
+      // Fallback constructed user if trigger was delayed or offline
       profile = {
         id: userId,
-        name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Sanctuary Client',
-        email: session.user.email || '',
+        name: isDedicatedAdmin ? 'Eloria Administrator' : (session.user.user_metadata?.full_name || userEmail.split('@')[0] || 'Sanctuary Client'),
+        email: userEmail,
         phone: '',
-        role: (session.user.user_metadata?.role as any) || 'customer',
+        role: isDedicatedAdmin ? 'admin' : 'customer',
         memberSince: 'Today',
       };
+    } else if (isDedicatedAdmin && profile.role !== 'admin') {
+      profile.role = 'admin';
     }
 
     setCurrentUser(profile);
     await loadUserData(profile);
   }, [loadUserData]);
 
-  // Initial mount: load public catalog and session
+  // Initial mount: load catalog and session
   useEffect(() => {
     let isMounted = true;
 
@@ -199,7 +198,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuthError(null);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password,
       });
 
@@ -227,13 +226,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ): Promise<{ success: boolean; error?: string }> => {
     setAuthError(null);
     try {
+      const cleanEmail = email.trim().toLowerCase();
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: cleanEmail,
         password,
         options: {
           data: {
             full_name: fullName.trim() || 'Sanctuary Client',
-            role: 'customer',
+            role: cleanEmail === 'admin@gmail.com' ? 'admin' : 'customer',
           },
         },
       });
@@ -267,49 +267,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications([]);
   };
 
-  // Legacy demo helper / role switcher
-  const loginAs = async (role: 'customer' | 'admin', email?: string) => {
-    const targetEmail = email || (role === 'admin' ? 'marcus.sterling@eloriawellness.com' : 'elena.vance@example.com');
-    const demoPassword = 'Password123!';
-
-    // Attempt sign in with demo credentials
-    const res = await signIn(targetEmail, demoPassword);
-    if (!res.success) {
-      // If demo user doesn't exist yet, attempt automatic sign up
-      const fullName = role === 'admin' ? 'Marcus Sterling' : 'Elena Vance';
-      const upRes = await signUp(targetEmail, demoPassword, fullName);
-      if (!upRes.success) {
-        console.warn('Quick login signup note:', upRes.error);
-      }
-    }
-  };
-
   // Appointments
-  const createBooking = async (
-    data: Omit<Appointment, 'id' | 'createdAt' | 'paymentStatus'> & {
-      paymentStatus?: Appointment['paymentStatus'];
+  const createBooking = async (data: {
+    serviceId: string;
+    therapistId: string | null;
+    date: string;
+    timeSlot: string;
+    price: number;
+    notes?: string;
+    paymentMethod: Appointment['paymentMethod'];
+    paymentStatus?: Appointment['paymentStatus'];
+    status?: Appointment['status'];
+  }): Promise<Appointment> => {
+    if (!currentUser) {
+      throw new Error('Please sign in to complete your booking.');
     }
-  ): Promise<Appointment> => {
-    const customerId = currentUser?.id || data.customerId;
+
     const newApt = await EloriaApi.createAppointment({
       ...data,
-      customerId,
-      customerName: currentUser?.name || data.customerName,
-      customerEmail: currentUser?.email || data.customerEmail,
-      customerPhone: currentUser?.phone || data.customerPhone,
+      customerId: currentUser.id,
     });
     await refreshAll();
     return newApt;
   };
 
-  const updateBookingStatus = async (id: string, status: Appointment['status']) => {
-    await EloriaApi.updateAppointmentStatus(id, status, currentUser?.id);
+  const updateBookingStatus = async (
+    id: string,
+    status: Appointment['status'],
+    adminNotes?: string,
+    therapistId?: string | null
+  ) => {
+    await EloriaApi.updateAppointmentStatus(id, status, adminNotes, therapistId);
     await refreshAll();
   };
 
-  const rescheduleBooking = async (id: string, newDate: string, newTimeSlot: string) => {
-    const currentApt = appointments.find((a) => a.id === id);
-    await EloriaApi.rescheduleAppointment(id, newDate, newTimeSlot, currentApt?.therapistId, currentUser?.id);
+  const rescheduleBooking = async (id: string, newDate: string, newTimeSlot: string, therapistId?: string | null) => {
+    await EloriaApi.rescheduleAppointment(id, newDate, newTimeSlot, therapistId, currentUser?.id);
     await refreshAll();
   };
 
@@ -348,21 +341,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
-  // Settings
-  const updateNotificationPreferences = async (settings: Partial<NotificationSettings>) => {
-    if (!currentUser) return;
-    await EloriaApi.updateNotificationSettings(currentUser.id, settings);
-    setNotificationSettings((prev) => (prev ? { ...prev, ...settings } : (settings as NotificationSettings)));
-  };
-
+  // Clinic Operations Settings
   const updateClinicSettings = async (settings: Partial<ClinicAvailabilitySettings>) => {
     await EloriaApi.updateBusinessSettings(settings);
     setClinicAvailability((prev) => (prev ? { ...prev, ...settings } : (settings as ClinicAvailabilitySettings)));
-  };
-
-  // Reset demo data
-  const resetDemoData = async () => {
-    await refreshAll();
   };
 
   return (
@@ -376,13 +358,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         appointments,
         reviews,
         notifications,
-        notificationSettings,
         clinicAvailability,
         isLoading,
         authError,
         signIn,
         signUp,
-        loginAs,
         logout,
         createBooking,
         updateBookingStatus,
@@ -392,9 +372,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleService,
         markNotificationRead,
         markAllNotificationsRead,
-        updateNotificationPreferences,
         updateClinicSettings,
-        resetDemoData,
         refreshAll,
       }}
     >

@@ -1,86 +1,174 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  TouchableOpacity,
+  RefreshControl,
 } from 'react-native';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '../../components/AppHeader';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
+import { formatNaira } from '../../mock/initialData';
+import { PaymentStatus } from '../../types';
 
 export default function AdminPaymentsScreen() {
-  const { appointments } = useApp();
+  const { appointments, refreshAll, isLoading } = useApp();
+  const [filter, setFilter] = useState<'all' | PaymentStatus>('all');
+
+  const filteredAppointments = appointments.filter((apt) => {
+    if (filter === 'all') return true;
+    return apt.paymentStatus === filter;
+  });
 
   const totalCaptured = appointments
     .filter((a) => a.paymentStatus === 'paid')
-    .reduce((sum, a) => sum + (a.paidAmount || 0), 0);
+    .reduce((sum, a) => sum + (a.paidAmount || a.price || 0), 0);
+
+  const pendingAmount = appointments
+    .filter((a) => a.paymentStatus === 'pending')
+    .reduce((sum, a) => sum + (a.price || 0), 0);
 
   return (
     <ScreenContainer>
-      <AppHeader title="Ledger & Payments" subtitle="Treasury" showBack onBack={() => {}} />
+      <AppHeader
+        title="Ledger & Payments"
+        subtitle="Financial Overview"
+        showBack
+        onBack={() => router.back()}
+      />
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} tintColor={Colors.primary} />}
       >
-        {/* Total Captured Hero Card */}
-        <View style={styles.revenueHeroCard}>
-          <Text style={styles.heroSub}>TOTAL CAPTURED REVENUE (DEMO)</Text>
-          <Text style={styles.heroAmount}>${totalCaptured}.00</Text>
-          <View style={styles.demoNotice}>
-            <Ionicons name="information-circle" size={14} color={Colors.primary} />
-            <Text style={styles.demoNoticeText}>
-              All transactions are simulated frontend records for sanctuary testing.
+        {/* KPI Cards */}
+        <View style={styles.kpiRow}>
+          <View style={styles.kpiCard}>
+            <Text style={styles.kpiLabel}>PAID REVENUE</Text>
+            <Text style={[styles.kpiValue, { color: Colors.success }]}>
+              {formatNaira(totalCaptured)}
             </Text>
+            <Text style={styles.kpiSub}>Verified receipts</Text>
+          </View>
+          <View style={styles.kpiCard}>
+            <Text style={styles.kpiLabel}>PENDING PAYMENT</Text>
+            <Text style={[styles.kpiValue, { color: Colors.warning }]}>
+              {formatNaira(pendingAmount)}
+            </Text>
+            <Text style={styles.kpiSub}>Awaiting settlement</Text>
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Transaction History ({appointments.length})</Text>
+        {/* Notice Banner */}
+        <View style={styles.noticeBanner}>
+          <Ionicons name="information-circle-outline" size={18} color={Colors.primary} />
+          <Text style={styles.noticeText}>
+            Payments are registered with status pending until transaction verification or cash collection is settled.
+          </Text>
+        </View>
 
-        {appointments.map((apt) => (
-          <View key={apt.id} style={styles.txCard}>
-            <View style={styles.txTopRow}>
-              <View style={styles.txIcon}>
-                <Ionicons
-                  name={apt.paymentMethod === 'apple_pay' ? 'logo-apple' : 'card-outline'}
-                  size={18}
-                  color={Colors.primaryContainer}
-                />
-              </View>
-
-              <View style={styles.txClientCol}>
-                <Text style={styles.txClientName}>{apt.customerName}</Text>
-                <Text style={styles.txServiceSub}>
-                  {apt.serviceName} • {apt.therapistName}
-                </Text>
-              </View>
-
-              <View style={styles.txPriceCol}>
-                <Text style={styles.txPrice}>+${apt.paidAmount}.00</Text>
-                <Text
-                  style={[
-                    styles.txStatus,
-                    apt.paymentStatus === 'paid' ? { color: Colors.success } : { color: Colors.error },
-                  ]}
-                >
-                  {apt.paymentStatus.toUpperCase()}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.txMetaFooter}>
-              <Text style={styles.txDate}>
-                {apt.date} • {apt.timeSlot}
+        {/* Filter Pills */}
+        <View style={styles.filterRow}>
+          {(['all', 'pending', 'paid', 'failed'] as const).map((status) => (
+            <TouchableOpacity
+              key={status}
+              style={[styles.filterChip, filter === status && styles.filterChipActive]}
+              onPress={() => setFilter(status)}
+            >
+              <Text style={[styles.filterChipText, filter === status && styles.filterChipTextActive]}>
+                {status.toUpperCase()}
               </Text>
-              <Text style={styles.txRef}>REF: {apt.id}</Text>
-            </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.sectionTitle}>
+          Transactions ({filteredAppointments.length})
+        </Text>
+
+        {filteredAppointments.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="receipt-outline" size={36} color={Colors.tertiary} />
+            <Text style={styles.emptyTitle}>No transactions found</Text>
+            <Text style={styles.emptySub}>No bookings match the selected status.</Text>
           </View>
-        ))}
+        ) : (
+          filteredAppointments.map((apt) => {
+            const isPaid = apt.paymentStatus === 'paid';
+            const isFailed = apt.paymentStatus === 'failed';
+
+            return (
+              <View key={apt.id} style={styles.txCard}>
+                <View style={styles.txTopRow}>
+                  <View style={styles.txIcon}>
+                    <Ionicons
+                      name={
+                        apt.paymentMethod === 'card'
+                          ? 'card-outline'
+                          : apt.paymentMethod === 'bank_transfer'
+                          ? 'business-outline'
+                          : 'cash-outline'
+                      }
+                      size={18}
+                      color={Colors.primary}
+                    />
+                  </View>
+
+                  <View style={styles.txClientCol}>
+                    <Text style={styles.txClientName}>{apt.customerName || 'Guest Client'}</Text>
+                    <Text style={styles.txServiceSub}>
+                      {apt.serviceName} • Specialist: {apt.therapistName || 'Unassigned'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.txPriceCol}>
+                    <Text style={styles.txPrice}>{formatNaira(apt.price)}</Text>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        isPaid
+                          ? styles.statusPaid
+                          : isFailed
+                          ? styles.statusFailed
+                          : styles.statusPending,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.statusBadgeText,
+                          isPaid
+                            ? { color: Colors.success }
+                            : isFailed
+                            ? { color: Colors.error }
+                            : { color: Colors.warning },
+                        ]}
+                      >
+                        {apt.paymentStatus.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.txMetaFooter}>
+                  <Text style={styles.txDate}>
+                    {apt.date} at {apt.timeSlot}
+                  </Text>
+                  <Text style={styles.txMethod}>
+                    Method: {apt.paymentMethod ? apt.paymentMethod.replace('_', ' ').toUpperCase() : 'N/A'}
+                  </Text>
+                </View>
+              </View>
+            );
+          })
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -93,6 +181,7 @@ export default function AdminPaymentsScreen() {
 const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
+    backgroundColor: Colors.background,
   },
   content: {
     paddingHorizontal: 16,
@@ -100,54 +189,107 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     gap: 12,
   },
-  revenueHeroCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 16,
-    padding: 18,
+  kpiRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  kpiCard: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
     borderColor: Colors.hairlineBorder,
-    alignItems: 'center',
-    gap: 6,
   },
-  heroSub: {
+  kpiLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.tertiary,
-    letterSpacing: 1,
+    color: Colors.mutedSlate,
+    letterSpacing: 0.8,
   },
-  heroAmount: {
-    fontSize: 32,
+  kpiValue: {
+    fontSize: 18,
     fontWeight: '800',
-    color: Colors.primary,
-  },
-  demoNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.aquaTint,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
     marginTop: 4,
   },
-  demoNoticeText: {
+  kpiSub: {
     fontSize: 11,
+    color: Colors.mutedSlate,
+    marginTop: 2,
+  },
+  noticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.aquaMist,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.aquaTint,
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 12,
     color: Colors.primary,
+    lineHeight: 16,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 4,
+  },
+  filterChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: Colors.hairlineBorder,
+  },
+  filterChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterChipText: {
+    fontSize: 11,
     fontWeight: '600',
+    color: Colors.mutedSlate,
+  },
+  filterChipTextActive: {
+    color: Colors.onPrimary,
   },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
-    color: Colors.onSurface,
-    marginTop: 6,
+    color: Colors.charcoal,
+    marginTop: 4,
   },
-  txCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
+  emptyCard: {
+    backgroundColor: '#ffffff',
     borderRadius: 14,
-    padding: 12,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: Colors.hairlineBorder,
     gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.charcoal,
+  },
+  emptySub: {
+    fontSize: 12,
+    color: Colors.mutedSlate,
+  },
+  txCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.hairlineBorder,
+    gap: 10,
   },
   txTopRow: {
     flexDirection: 'row',
@@ -158,7 +300,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: Colors.surfaceContainerLow,
+    backgroundColor: Colors.aquaMist,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -168,31 +310,45 @@ const styles = StyleSheet.create({
   txClientName: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.onSurface,
+    color: Colors.charcoal,
   },
   txServiceSub: {
     fontSize: 11,
-    color: Colors.tertiary,
-    marginTop: 1,
+    color: Colors.mutedSlate,
+    marginTop: 2,
   },
   txPriceCol: {
     alignItems: 'flex-end',
   },
   txPrice: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
-    color: Colors.onSurface,
+    color: Colors.charcoal,
   },
-  txStatus: {
-    fontSize: 10,
+  statusBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  statusPaid: {
+    backgroundColor: '#E8F5E9',
+  },
+  statusPending: {
+    backgroundColor: '#FFF8E1',
+  },
+  statusFailed: {
+    backgroundColor: '#FFEBEE',
+  },
+  statusBadgeText: {
+    fontSize: 9,
     fontWeight: '700',
-    marginTop: 2,
   },
   txMetaFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 6,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: Colors.hairlineBorder,
   },
@@ -200,9 +356,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.mutedSlate,
   },
-  txRef: {
-    fontSize: 10,
-    color: Colors.tertiary,
+  txMethod: {
+    fontSize: 11,
+    color: Colors.mutedSlate,
     fontWeight: '600',
   },
 });

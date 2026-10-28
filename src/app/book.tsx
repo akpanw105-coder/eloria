@@ -6,96 +6,131 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { AppHeader } from '../components/AppHeader';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Colors } from '../constants/theme';
 import { useApp } from '../context/AppContext';
 import { MassageService, Therapist } from '../types';
-import { INITIAL_SERVICES, INITIAL_THERAPISTS } from '../mock/initialData';
+import { INITIAL_SERVICES, INITIAL_THERAPISTS, formatNaira } from '../mock/initialData';
 
 export default function BookAppointmentScreen() {
-  const { serviceId } = useLocalSearchParams<{ serviceId?: string }>();
-  const { services, therapists, createBooking, currentUser } = useApp();
+  const params = useLocalSearchParams<{ serviceId?: string }>();
+  const { services, therapists, appointments, createBooking, currentUser } = useApp();
 
-  const effectiveServices = services.length > 0 ? services : INITIAL_SERVICES;
-  const effectiveTherapists = therapists.length > 0 ? therapists : INITIAL_THERAPISTS;
+  const availableServices = services.length > 0 ? services : INITIAL_SERVICES;
+  const availableTherapists = therapists.length > 0 ? therapists : INITIAL_THERAPISTS;
 
-  // Booking form state
+  // Selected Service
   const [selectedService, setSelectedService] = useState<MassageService>(() => {
     return (
-      effectiveServices.find((s) => s.id === serviceId) ||
-      effectiveServices[0] ||
+      availableServices.find((s) => s.id === params.serviceId) ||
+      availableServices[0] ||
       INITIAL_SERVICES[0]
     );
   });
-  const [selectedDate, setSelectedDate] = useState<string>('Wed, 14 Aug');
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('10:30 AM');
-  const [selectedTherapist, setSelectedTherapist] = useState<Therapist>(
-    effectiveTherapists[0] || INITIAL_THERAPISTS[0]
-  );
-  const [bookingStep, setBookingStep] = useState<'details' | 'payment' | 'confirmed'>('details');
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'apple_pay' | 'cash'>('card');
+
+  // Therapist preference: null means "Any Available Therapist"
+  const [selectedTherapist, setSelectedTherapist] = useState<Therapist | null>(null);
+
+  // Date selection
+  const today = new Date();
+  const dateOptions = Array.from({ length: 14 }).map((_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i + 1);
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const iso = d.toISOString().split('T')[0];
+    return {
+      iso,
+      dayName: dayNames[d.getDay()],
+      dayNum: d.getDate(),
+      month: monthNames[d.getMonth()],
+      formatted: `${dayNames[d.getDay()]}, ${d.getDate()} ${monthNames[d.getMonth()]}`,
+    };
+  });
+
+  const [selectedDate, setSelectedDate] = useState<string>(dateOptions[0].iso);
+
+  // Time Slots
+  const timeSlots = [
+    '09:00 AM',
+    '10:30 AM',
+    '12:00 PM',
+    '01:30 PM',
+    '03:00 PM',
+    '04:30 PM',
+    '06:00 PM',
+    '07:30 PM',
+  ];
+
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>(timeSlots[0]);
+
+  // Flow Steps: 'details' -> 'review_payment' -> 'success'
+  const [bookingStep, setBookingStep] = useState<'details' | 'review_payment' | 'success'>('details');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'bank_transfer' | 'cash'>('card');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [confirmedAptId, setConfirmedAptId] = useState<string | null>(null);
+  const [confirmedBookingId, setConfirmedBookingId] = useState<string | null>(null);
 
-  // Calendar dates
-  const calendarDays = [
-    { label: 'Mon', num: '12', dateStr: 'Mon, 12 Aug', available: true },
-    { label: 'Tue', num: '13', dateStr: 'Tue, 13 Aug', available: false },
-    { label: 'Wed', num: '14', dateStr: 'Wed, 14 Aug', available: true },
-    { label: 'Thu', num: '15', dateStr: 'Thu, 15 Aug', available: false },
-    { label: 'Fri', num: '16', dateStr: 'Fri, 16 Aug', available: true },
-    { label: 'Sat', num: '17', dateStr: 'Sat, 17 Aug', available: true },
-    { label: 'Sun', num: '18', dateStr: 'Sun, 18 Aug', available: false },
-  ];
-
-  const morningSlots = [
-    { time: '09:00 AM', available: true },
-    { time: '10:30 AM', available: true },
-    { time: '11:45 AM', available: false },
-  ];
-
-  const afternoonSlots = [
-    { time: '02:00 PM', available: true },
-    { time: '03:30 PM', available: true },
-    { time: '05:00 PM', available: true },
-  ];
-
-  const handleProceedToPayment = () => {
-    setBookingStep('payment');
+  // Check if slot is booked by the selected therapist
+  const isSlotBooked = (slot: string) => {
+    if (!selectedTherapist) return false;
+    return appointments.some(
+      (a) =>
+        a.therapistId === selectedTherapist.id &&
+        a.date === selectedDate &&
+        a.timeSlot === slot &&
+        a.status !== 'cancelled' &&
+        a.status !== 'rejected'
+    );
   };
 
-  const handleConfirmBooking = async () => {
+  const handleProceedToReview = () => {
+    if (!currentUser) {
+      Alert.alert(
+        'Sign In Required',
+        'Please sign in or create an account to proceed with booking your appointment.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign In', onPress: () => router.push('/auth') },
+        ]
+      );
+      return;
+    }
+
+    if (isSlotBooked(selectedTimeSlot)) {
+      Alert.alert('Slot Unavailable', 'This time slot is already booked for the selected specialist. Please choose another slot.');
+      return;
+    }
+
+    setBookingStep('review_payment');
+  };
+
+  const handleConfirmAndPay = async () => {
     try {
       setIsSubmitting(true);
-      const newApt = await createBooking({
-        customerId: currentUser?.id || 'usr-customer-1',
-        customerName: currentUser?.name || 'Guest Client',
-        customerEmail: currentUser?.email || 'guest@eloriawellness.com',
-        customerPhone: currentUser?.phone || '+1 (555) 000-0000',
+
+      // Determine therapist assignment: if 'any', assign first therapist or store preference
+      const assignedTherapistId = selectedTherapist ? selectedTherapist.id : (availableTherapists[0]?.id || null);
+
+      const newBooking = await createBooking({
         serviceId: selectedService.id,
-        serviceName: selectedService.name,
-        durationMinutes: selectedService.durationMinutes,
-        price: selectedService.price,
-        therapistId: selectedTherapist.id,
-        therapistName: selectedTherapist.name,
-        therapistAvatar: selectedTherapist.avatarUrl,
+        therapistId: assignedTherapistId,
         date: selectedDate,
         timeSlot: selectedTimeSlot,
-        status: 'confirmed',
-        location: 'Studio 4B, Eloria Wellness Sanctuary, Central Ave',
-        paidAmount: selectedService.price,
+        price: selectedService.price,
         paymentMethod,
-        paymentStatus: 'paid',
-        notes: 'Client confirmed via Eloria Web/Mobile Booking Flow',
+        paymentStatus: 'pending', // Payment pending provider completion / transfer verification
+        status: 'pending', // Pending admin confirmation
+        notes: selectedTherapist ? `Requested: ${selectedTherapist.name}` : 'Client selected Any Available Therapist',
       });
-      setConfirmedAptId(newApt.id);
-      setBookingStep('confirmed');
-    } catch {
-      Alert.alert('Booking Notice', 'Unable to complete booking. Please try again.');
+
+      setConfirmedBookingId(newBooking.id);
+      setBookingStep('success');
+    } catch (err: any) {
+      Alert.alert('Booking Error', err.message || 'Could not complete your booking request.');
     } finally {
       setIsSubmitting(false);
     }
@@ -103,219 +138,71 @@ export default function BookAppointmentScreen() {
 
   return (
     <ScreenContainer>
-      <AppHeader
-        title={
-          bookingStep === 'payment'
-            ? 'Demo Payment'
-            : bookingStep === 'confirmed'
-            ? 'Confirmed'
-            : 'Book Session Flow'
-        }
-        subtitle="Eloria"
-        showBack={bookingStep !== 'confirmed'}
-        onBack={() => {
-          if (bookingStep === 'payment') setBookingStep('details');
-          else router.back();
-        }}
-      />
+      {/* Top Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => {
+            if (bookingStep === 'review_payment') {
+              setBookingStep('details');
+            } else if (bookingStep === 'success') {
+              router.replace('/bookings');
+            } else {
+              router.back();
+            }
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color={Colors.charcoal} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>
+          {bookingStep === 'details' && 'Book Massage Session'}
+          {bookingStep === 'review_payment' && 'Review & Payment'}
+          {bookingStep === 'success' && 'Booking Confirmed'}
+        </Text>
+        <View style={{ width: 40 }} />
+      </View>
 
-      {bookingStep === 'details' && (
-        <>
-          <ScrollView
-            style={styles.scrollView}
-            contentContainerStyle={styles.content}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Step indicator header */}
-            <View style={styles.stepHeader}>
-              <View style={styles.stepTextRow}>
-                <Text style={styles.stepTag}>STEP 2 OF 4</Text>
-                <Text style={styles.stepTitle}>Date & Time</Text>
-              </View>
-              <View style={styles.progressBarTrack}>
-                <View style={[styles.progressBarFill, { width: '50%' }]} />
-              </View>
-            </View>
-
-            {/* Selected Service Capsule Card */}
-            <View style={styles.selectedServiceCard}>
-              <View style={styles.selectedServiceLeft}>
-                <View style={styles.serviceIconPill}>
-                  <Ionicons name="sparkles" size={20} color={Colors.primaryContainer} />
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {bookingStep === 'details' && (
+          <>
+            {/* Step 1: Select Massage Service */}
+            <View style={styles.stepSection}>
+              <View style={styles.stepTitleRow}>
+                <View style={styles.stepNumberBadge}>
+                  <Text style={styles.stepNumberText}>1</Text>
                 </View>
-                <View style={styles.serviceCapsuleText}>
-                  <Text style={styles.capsuleServiceName}>{selectedService.name}</Text>
-                  <Text style={styles.capsuleServiceMeta}>
-                    {selectedService.durationMinutes} min restorative session
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.capsulePrice}>${selectedService.price}</Text>
-            </View>
-
-            {/* Interactive Calendar Card */}
-            <View style={styles.calendarCard}>
-              <View style={styles.monthHeaderRow}>
-                <TouchableOpacity style={styles.monthNavBtn}>
-                  <Ionicons name="chevron-back" size={18} color={Colors.tertiary} />
-                </TouchableOpacity>
-                <Text style={styles.monthTitle}>AUGUST 2024</Text>
-                <TouchableOpacity style={styles.monthNavBtn}>
-                  <Ionicons name="chevron-forward" size={18} color={Colors.tertiary} />
-                </TouchableOpacity>
+                <Text style={styles.stepTitle}>Select Massage Service</Text>
               </View>
 
-              <View style={styles.calendarGrid}>
-                {calendarDays.map((item) => {
-                  const isSelected = selectedDate === item.dateStr;
+              <View style={styles.servicesList}>
+                {availableServices.map((svc) => {
+                  const isSelected = selectedService.id === svc.id;
                   return (
                     <TouchableOpacity
-                      key={item.dateStr}
-                      style={[
-                        styles.calendarDatePill,
-                        isSelected && styles.calendarDatePillActive,
-                        !item.available && styles.calendarDatePillDisabled,
-                      ]}
-                      onPress={() => item.available && setSelectedDate(item.dateStr)}
-                      disabled={!item.available}
-                    >
-                      <Text
-                        style={[
-                          styles.calDayLabel,
-                          isSelected && styles.calDayLabelActive,
-                          !item.available && styles.calDayLabelDisabled,
-                        ]}
-                      >
-                        {item.label}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.calDayNum,
-                          isSelected && styles.calDayNumActive,
-                          !item.available && styles.calDayNumDisabled,
-                        ]}
-                      >
-                        {item.num}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Available Time Slots Section */}
-            <View style={styles.sectionBox}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionHeading}>Available Time Slots</Text>
-                <View style={styles.timeZoneRow}>
-                  <Ionicons name="time-outline" size={14} color={Colors.tertiary} />
-                  <Text style={styles.timeZoneText}>GMT-4 (EDT)</Text>
-                </View>
-              </View>
-
-              <Text style={styles.slotGroupLabel}>MORNING</Text>
-              <View style={styles.slotGrid}>
-                {morningSlots.map((slot) => {
-                  const isSelected = selectedTimeSlot === slot.time;
-                  return (
-                    <TouchableOpacity
-                      key={slot.time}
-                      style={[
-                        styles.slotButton,
-                        isSelected && styles.slotButtonActive,
-                        !slot.available && styles.slotButtonDisabled,
-                      ]}
-                      onPress={() => slot.available && setSelectedTimeSlot(slot.time)}
-                      disabled={!slot.available}
-                    >
-                      <Text
-                        style={[
-                          styles.slotButtonText,
-                          isSelected && styles.slotButtonTextActive,
-                          !slot.available && styles.slotButtonTextDisabled,
-                        ]}
-                      >
-                        {slot.time}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <Text style={[styles.slotGroupLabel, { marginTop: 12 }]}>AFTERNOON</Text>
-              <View style={styles.slotGrid}>
-                {afternoonSlots.map((slot) => {
-                  const isSelected = selectedTimeSlot === slot.time;
-                  return (
-                    <TouchableOpacity
-                      key={slot.time}
-                      style={[
-                        styles.slotButton,
-                        isSelected && styles.slotButtonActive,
-                        !slot.available && styles.slotButtonDisabled,
-                      ]}
-                      onPress={() => slot.available && setSelectedTimeSlot(slot.time)}
-                      disabled={!slot.available}
-                    >
-                      <Text
-                        style={[
-                          styles.slotButtonText,
-                          isSelected && styles.slotButtonTextActive,
-                          !slot.available && styles.slotButtonTextDisabled,
-                        ]}
-                      >
-                        {slot.time}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Therapist Selection */}
-            <View style={styles.sectionBox}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionHeading}>Therapist Selection</Text>
-                <Text style={styles.therapistNote}>Any Specialist Available</Text>
-              </View>
-
-              <View style={styles.therapistsGrid}>
-                {effectiveTherapists.map((therapist) => {
-                  const isSelected = selectedTherapist?.id === therapist.id;
-                  return (
-                    <TouchableOpacity
-                      key={therapist.id}
-                      style={[
-                        styles.therapistCard,
-                        isSelected && styles.therapistCardActive,
-                      ]}
-                      onPress={() => setSelectedTherapist(therapist)}
+                      key={svc.id}
+                      style={[styles.serviceOptionCard, isSelected && styles.serviceOptionCardSelected]}
+                      onPress={() => setSelectedService(svc)}
                       activeOpacity={0.8}
                     >
-                      {isSelected && <View style={styles.activeTherapistBar} />}
-                      <View style={styles.therapistCardImg}>
-                        <Text style={styles.therapistCardInitials}>
-                          {therapist.name
-                            .split(' ')
-                            .map((p) => p[0])
-                            .join('')
-                            .slice(0, 2)
-                            .toUpperCase()}
-                        </Text>
+                      <View style={styles.serviceOptionRadio}>
+                        <Ionicons
+                          name={isSelected ? 'radio-button-on' : 'radio-button-off'}
+                          size={20}
+                          color={isSelected ? Colors.primary : Colors.outline}
+                        />
                       </View>
-                      <View style={styles.therapistCardInfo}>
-                        <Text style={styles.therapistCardName} numberOfLines={1}>
-                          {therapist.name}
+                      <View style={styles.serviceOptionInfo}>
+                        <View style={styles.serviceNameRow}>
+                          <Text style={[styles.serviceOptionName, isSelected && styles.serviceOptionNameSelected]}>
+                            {svc.name}
+                          </Text>
+                          <Text style={styles.serviceOptionPrice}>{formatNaira(svc.price)}</Text>
+                        </View>
+                        <Text style={styles.serviceOptionMeta}>
+                          {svc.durationMinutes} mins • {svc.badge || 'Therapeutic'}
                         </Text>
-                        <Text
-                          style={[
-                            styles.therapistCardTitle,
-                            isSelected && styles.therapistCardTitleActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {therapist.title}
-                        </Text>
+                        <Text style={styles.serviceOptionTagline}>{svc.tagline}</Text>
                       </View>
                     </TouchableOpacity>
                   );
@@ -323,828 +210,717 @@ export default function BookAppointmentScreen() {
               </View>
             </View>
 
-            <View style={{ height: 110 }} />
-          </ScrollView>
-
-          {/* Sticky Bottom Summary & Payment Action Drawer */}
-          <View style={styles.stickyFooterDrawer}>
-            <View style={styles.drawerSummaryRow}>
-              <View style={styles.drawerLeft}>
-                <View style={styles.drawerCheckRow}>
-                  <Ionicons name="checkmark-circle" size={16} color={Colors.primaryContainer} />
-                  <Text style={styles.drawerSelectedTime}>
-                    {selectedDate} at {selectedTimeSlot}
-                  </Text>
+            {/* Step 2: Choose Therapist */}
+            <View style={styles.stepSection}>
+              <View style={styles.stepTitleRow}>
+                <View style={styles.stepNumberBadge}>
+                  <Text style={styles.stepNumberText}>2</Text>
                 </View>
-                <Text style={styles.drawerSubText}>
-                  {selectedService.name} • {selectedTherapist.name}
+                <Text style={styles.stepTitle}>Choose Specialist</Text>
+              </View>
+
+              <View style={styles.therapistGrid}>
+                {/* Option: Any Available Therapist */}
+                <TouchableOpacity
+                  style={[
+                    styles.therapistOptionCard,
+                    selectedTherapist === null && styles.therapistOptionCardSelected,
+                  ]}
+                  onPress={() => setSelectedTherapist(null)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.avatarCircle, selectedTherapist === null && styles.avatarCircleSelected]}>
+                    <Ionicons
+                      name="people-outline"
+                      size={20}
+                      color={selectedTherapist === null ? Colors.onPrimary : Colors.primary}
+                    />
+                  </View>
+                  <View style={styles.therapistInfo}>
+                    <Text style={styles.therapistName}>Any Available Specialist</Text>
+                    <Text style={styles.therapistRole}>Fastest confirmation</Text>
+                  </View>
+                  <Ionicons
+                    name={selectedTherapist === null ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={20}
+                    color={selectedTherapist === null ? Colors.primary : Colors.outline}
+                  />
+                </TouchableOpacity>
+
+                {/* Named Specialists */}
+                {availableTherapists.map((th) => {
+                  const isSelected = selectedTherapist?.id === th.id;
+                  return (
+                    <TouchableOpacity
+                      key={th.id}
+                      style={[styles.therapistOptionCard, isSelected && styles.therapistOptionCardSelected]}
+                      onPress={() => setSelectedTherapist(th)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.avatarCircle, isSelected && styles.avatarCircleSelected]}>
+                        <Ionicons
+                          name="person"
+                          size={18}
+                          color={isSelected ? Colors.onPrimary : Colors.primary}
+                        />
+                      </View>
+                      <View style={styles.therapistInfo}>
+                        <Text style={styles.therapistName}>{th.name}</Text>
+                        <Text style={styles.therapistRole}>
+                          ⭐ {th.rating} • {th.title}
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name={isSelected ? 'checkmark-circle' : 'ellipse-outline'}
+                        size={20}
+                        color={isSelected ? Colors.primary : Colors.outline}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Step 3: Choose Date & Time */}
+            <View style={styles.stepSection}>
+              <View style={styles.stepTitleRow}>
+                <View style={styles.stepNumberBadge}>
+                  <Text style={styles.stepNumberText}>3</Text>
+                </View>
+                <Text style={styles.stepTitle}>Select Date & Time</Text>
+              </View>
+
+              {/* Date Scroll Strip */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dateScroll}>
+                {dateOptions.map((opt) => {
+                  const isSelected = selectedDate === opt.iso;
+                  return (
+                    <TouchableOpacity
+                      key={opt.iso}
+                      style={[styles.dateCard, isSelected && styles.dateCardSelected]}
+                      onPress={() => setSelectedDate(opt.iso)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.dateCardDay, isSelected && styles.dateCardTextSelected]}>
+                        {opt.dayName}
+                      </Text>
+                      <Text style={[styles.dateCardNum, isSelected && styles.dateCardTextSelected]}>
+                        {opt.dayNum}
+                      </Text>
+                      <Text style={[styles.dateCardMonth, isSelected && styles.dateCardTextSelected]}>
+                        {opt.month}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Time Slots Grid */}
+              <Text style={styles.slotsHeader}>Available Time Slots</Text>
+              <View style={styles.slotsGrid}>
+                {timeSlots.map((slot) => {
+                  const isSelected = selectedTimeSlot === slot;
+                  const booked = isSlotBooked(slot);
+                  return (
+                    <TouchableOpacity
+                      key={slot}
+                      disabled={booked}
+                      style={[
+                        styles.slotCard,
+                        isSelected && styles.slotCardSelected,
+                        booked && styles.slotCardBooked,
+                      ]}
+                      onPress={() => setSelectedTimeSlot(slot)}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.slotCardText,
+                          isSelected && styles.slotCardTextSelected,
+                          booked && styles.slotCardTextBooked,
+                        ]}
+                      >
+                        {slot}
+                      </Text>
+                      {booked && <Text style={styles.bookedLabel}>Booked</Text>}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Proceed CTA Button */}
+            <TouchableOpacity
+              style={styles.primaryActionBtn}
+              onPress={handleProceedToReview}
+              activeOpacity={0.85}
+            >
+              <View>
+                <Text style={styles.primaryActionBtnSub}>Total: {formatNaira(selectedService.price)}</Text>
+                <Text style={styles.primaryActionBtnText}>Review & Proceed to Payment</Text>
+              </View>
+              <Ionicons name="arrow-forward" size={20} color={Colors.onPrimary} />
+            </TouchableOpacity>
+          </>
+        )}
+
+        {/* Step 4 & 5: Review Booking Details & Payment Provider Selection */}
+        {bookingStep === 'review_payment' && (
+          <View style={styles.reviewContainer}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryTitle}>Appointment Summary</Text>
+
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Treatment</Text>
+                <Text style={styles.summaryValueBold}>{selectedService.name}</Text>
+              </View>
+
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Duration</Text>
+                <Text style={styles.summaryValue}>{selectedService.durationMinutes} minutes</Text>
+              </View>
+
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Specialist</Text>
+                <Text style={styles.summaryValue}>
+                  {selectedTherapist ? selectedTherapist.name : 'Any Available Specialist'}
                 </Text>
               </View>
-              <View style={styles.drawerRight}>
-                <Text style={styles.totalLabel}>TOTAL</Text>
-                <Text style={styles.totalPrice}>${selectedService.price}.00</Text>
-              </View>
-            </View>
 
-            <TouchableOpacity
-              style={styles.continueToPaymentBtn}
-              onPress={handleProceedToPayment}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.continueBtnText}>Continue to Payment</Text>
-              <Ionicons name="arrow-forward" size={18} color={Colors.onPrimary} />
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
-
-      {/* Step 2: Demo Payment Screen */}
-      {bookingStep === 'payment' && (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Demo disclaimer banner */}
-          <View style={styles.demoDisclaimerBox}>
-            <Ionicons name="information-circle" size={20} color={Colors.primaryContainer} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.demoDisclaimerTitle}>Demo Payment Flow</Text>
-              <Text style={styles.demoDisclaimerText}>
-                No real credit card will be charged. This environment stores bookings and local
-                receipts in your browser's persistent mock storage.
-              </Text>
-            </View>
-          </View>
-
-          {/* Order Summary */}
-          <View style={styles.receiptBox}>
-            <Text style={styles.receiptHeader}>Treatment Summary</Text>
-            <View style={styles.receiptRow}>
-              <Text style={styles.receiptLabel}>{selectedService.name}</Text>
-              <Text style={styles.receiptVal}>${selectedService.price}.00</Text>
-            </View>
-            <View style={styles.receiptRow}>
-              <Text style={styles.receiptLabel}>Specialist: {selectedTherapist.name}</Text>
-              <Text style={styles.receiptVal}>Included</Text>
-            </View>
-            <View style={styles.receiptRow}>
-              <Text style={styles.receiptLabel}>Schedule</Text>
-              <Text style={styles.receiptVal}>
-                {selectedDate}, {selectedTimeSlot}
-              </Text>
-            </View>
-            <View style={styles.receiptDivider} />
-            <View style={styles.receiptRow}>
-              <Text style={styles.receiptTotalLabel}>Amount to Authorize</Text>
-              <Text style={styles.receiptTotalVal}>${selectedService.price}.00</Text>
-            </View>
-          </View>
-
-          {/* Payment Method Selector */}
-          <View style={styles.paymentMethodsBox}>
-            <Text style={styles.methodsTitle}>Select Payment Method</Text>
-
-            <TouchableOpacity
-              style={[
-                styles.methodOption,
-                paymentMethod === 'card' && styles.methodOptionActive,
-              ]}
-              onPress={() => setPaymentMethod('card')}
-            >
-              <Ionicons
-                name="card-outline"
-                size={20}
-                color={paymentMethod === 'card' ? Colors.primaryContainer : Colors.tertiary}
-              />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.methodName}>Credit / Debit Card (Demo)</Text>
-                <Text style={styles.methodSub}>Ending in •••• 4242 (Pre-filled demo card)</Text>
-              </View>
-              {paymentMethod === 'card' && (
-                <Ionicons name="checkmark" size={18} color={Colors.primaryContainer} />
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.methodOption,
-                paymentMethod === 'apple_pay' && styles.methodOptionActive,
-              ]}
-              onPress={() => setPaymentMethod('apple_pay')}
-            >
-              <Ionicons
-                name="logo-apple"
-                size={20}
-                color={paymentMethod === 'apple_pay' ? Colors.primaryContainer : Colors.tertiary}
-              />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.methodName}>Apple Pay (Simulated)</Text>
-                <Text style={styles.methodSub}>Fast one-touch checkout</Text>
-              </View>
-              {paymentMethod === 'apple_pay' && (
-                <Ionicons name="checkmark" size={18} color={Colors.primaryContainer} />
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.methodOption,
-                paymentMethod === 'cash' && styles.methodOptionActive,
-              ]}
-              onPress={() => setPaymentMethod('cash')}
-            >
-              <Ionicons
-                name="cash-outline"
-                size={20}
-                color={paymentMethod === 'cash' ? Colors.primaryContainer : Colors.tertiary}
-              />
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={styles.methodName}>Pay at Sanctuary Desk</Text>
-                <Text style={styles.methodSub}>Cash or card on arrival</Text>
-              </View>
-              {paymentMethod === 'cash' && (
-                <Ionicons name="checkmark" size={18} color={Colors.primaryContainer} />
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {/* Confirm and Pay Button */}
-          <TouchableOpacity
-            style={[styles.continueToPaymentBtn, isSubmitting && { opacity: 0.7 }]}
-            onPress={handleConfirmBooking}
-            disabled={isSubmitting}
-            activeOpacity={0.9}
-          >
-            <Text style={styles.continueBtnText}>
-              {isSubmitting ? 'Confirming Sanctuary Slot...' : `Authorize $${selectedService.price}.00 (Demo)`}
-            </Text>
-            <Ionicons name="shield-checkmark" size={18} color={Colors.onPrimary} />
-          </TouchableOpacity>
-
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      )}
-
-      {/* Step 3: Booking Confirmed Confirmation Screen */}
-      {bookingStep === 'confirmed' && (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[styles.content, { alignItems: 'center', paddingTop: 30 }]}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.confirmedHeroCircle}>
-            <Ionicons name="checkmark" size={38} color={Colors.onPrimary} />
-          </View>
-
-          <Text style={styles.successHeading}>Appointment Confirmed!</Text>
-          <Text style={styles.successSubtitle}>
-            We have reserved your sanctuary time. A booking confirmation alert has been added to
-            your notifications.
-          </Text>
-
-          <View style={styles.confirmedCard}>
-            <View style={styles.confirmedCardHeader}>
-              <Text style={styles.confirmedRefNum}>
-                REF: {confirmedAptId || 'ELORIA-APT'}
-              </Text>
-              <Text style={styles.confirmedStatusTag}>PAID & RESERVED</Text>
-            </View>
-
-            <View style={styles.confirmedDetailsBody}>
-              <Text style={styles.confirmedService}>{selectedService.name}</Text>
-              <Text style={styles.confirmedTherapist}>With {selectedTherapist.name}</Text>
-
-              <View style={styles.confirmedMetaRow}>
-                <Ionicons name="calendar-outline" size={16} color={Colors.primary} />
-                <Text style={styles.confirmedMetaText}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Date & Time</Text>
+                <Text style={styles.summaryValue}>
                   {selectedDate} at {selectedTimeSlot}
                 </Text>
               </View>
 
-              <View style={styles.confirmedMetaRow}>
-                <Ionicons name="location-outline" size={16} color={Colors.primary} />
-                <Text style={styles.confirmedMetaText}>
-                  Studio 4B, Eloria Wellness Sanctuary, Central Ave
-                </Text>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Location</Text>
+                <Text style={styles.summaryValue}>Eloria Sanctuary, Private Suite</Text>
+              </View>
+
+              <View style={styles.divider} />
+
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total Amount</Text>
+                <Text style={styles.totalValue}>{formatNaira(selectedService.price)}</Text>
               </View>
             </View>
-          </View>
 
-          <View style={styles.confirmedActions}>
+            {/* Payment Method Selection */}
+            <View style={styles.paymentSection}>
+              <Text style={styles.paymentSectionTitle}>Select Payment Method</Text>
+
+              <TouchableOpacity
+                style={[styles.paymentMethodCard, paymentMethod === 'card' && styles.paymentMethodCardSelected]}
+                onPress={() => setPaymentMethod('card')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="card-outline" size={24} color={Colors.primary} />
+                <View style={styles.paymentMethodInfo}>
+                  <Text style={styles.paymentMethodName}>Debit / Credit Card</Text>
+                  <Text style={styles.paymentMethodDesc}>Paystack / Flutterwave secure gateway</Text>
+                </View>
+                <Ionicons
+                  name={paymentMethod === 'card' ? 'radio-button-on' : 'radio-button-off'}
+                  size={20}
+                  color={paymentMethod === 'card' ? Colors.primary : Colors.outline}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.paymentMethodCard, paymentMethod === 'bank_transfer' && styles.paymentMethodCardSelected]}
+                onPress={() => setPaymentMethod('bank_transfer')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="business-outline" size={24} color={Colors.primary} />
+                <View style={styles.paymentMethodInfo}>
+                  <Text style={styles.paymentMethodName}>Direct Bank Transfer</Text>
+                  <Text style={styles.paymentMethodDesc}>Instant Nigerian bank account transfer</Text>
+                </View>
+                <Ionicons
+                  name={paymentMethod === 'bank_transfer' ? 'radio-button-on' : 'radio-button-off'}
+                  size={20}
+                  color={paymentMethod === 'bank_transfer' ? Colors.primary : Colors.outline}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.paymentMethodCard, paymentMethod === 'cash' && styles.paymentMethodCardSelected]}
+                onPress={() => setPaymentMethod('cash')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="cash-outline" size={24} color={Colors.primary} />
+                <View style={styles.paymentMethodInfo}>
+                  <Text style={styles.paymentMethodName}>Pay at Sanctuary</Text>
+                  <Text style={styles.paymentMethodDesc}>Pay upon arrival prior to session</Text>
+                </View>
+                <Ionicons
+                  name={paymentMethod === 'cash' ? 'radio-button-on' : 'radio-button-off'}
+                  size={20}
+                  color={paymentMethod === 'cash' ? Colors.primary : Colors.outline}
+                />
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
-              style={styles.primaryActionButton}
+              style={styles.primaryActionBtn}
+              onPress={handleConfirmAndPay}
+              disabled={isSubmitting}
+              activeOpacity={0.85}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color={Colors.onPrimary} />
+              ) : (
+                <>
+                  <View>
+                    <Text style={styles.primaryActionBtnSub}>Pay {formatNaira(selectedService.price)}</Text>
+                    <Text style={styles.primaryActionBtnText}>Confirm Booking Request</Text>
+                  </View>
+                  <Ionicons name="shield-checkmark" size={22} color={Colors.onPrimary} />
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Step 6: Booking Result & Confirmation */}
+        {bookingStep === 'success' && (
+          <View style={styles.successContainer}>
+            <View style={styles.successIconCircle}>
+              <Ionicons name="checkmark-circle" size={64} color={Colors.success} />
+            </View>
+
+            <Text style={styles.successTitle}>Booking Request Submitted!</Text>
+            <Text style={styles.successSubtitle}>
+              Your appointment request has been securely recorded in the Eloria system. Our administrator will review and confirm your session.
+            </Text>
+
+            <View style={styles.successDetailsCard}>
+              <Text style={styles.successDetailsHeader}>Booking Reference Details</Text>
+              <Text style={styles.successLine}>• Treatment: {selectedService.name}</Text>
+              <Text style={styles.successLine}>• Date & Time: {selectedDate} at {selectedTimeSlot}</Text>
+              <Text style={styles.successLine}>• Specialist: {selectedTherapist ? selectedTherapist.name : 'Any Available Specialist'}</Text>
+              <Text style={styles.successLine}>• Total Price: {formatNaira(selectedService.price)}</Text>
+              <Text style={styles.successLine}>• Status: Pending Admin Confirmation</Text>
+              <Text style={styles.successLine}>• Reminder: Scheduled for 2 hours before session</Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.primaryActionBtn}
               onPress={() => router.replace('/bookings')}
+              activeOpacity={0.85}
             >
-              <Ionicons name="calendar" size={18} color={Colors.onPrimary} />
-              <Text style={styles.primaryActionText}>View My Bookings</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryActionButton}
-              onPress={() => router.replace('/')}
-            >
-              <Text style={styles.secondaryActionText}>Return to Home</Text>
+              <Text style={styles.primaryActionBtnText}>View in My Bookings</Text>
+              <Ionicons name="calendar-outline" size={20} color={Colors.onPrimary} />
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      )}
+        )}
+      </ScrollView>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  content: {
+  header: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 24,
-    gap: 16,
-  },
-  stepHeader: {
-    gap: 8,
-  },
-  stepTextRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  stepTag: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Colors.primaryContainer,
-    letterSpacing: 0.8,
-  },
-  stepTitle: {
-    fontSize: 13,
-    color: Colors.tertiary,
-    fontWeight: '500',
-  },
-  progressBarTrack: {
-    width: '100%',
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.surfaceContainer,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: Colors.primaryContainer,
-    borderRadius: 3,
-  },
-  selectedServiceCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    shadowColor: Colors.charcoal,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  selectedServiceLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  serviceIconPill: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: Colors.surfaceContainerLow,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  serviceCapsuleText: {
-    flex: 1,
-  },
-  capsuleServiceName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  capsuleServiceMeta: {
-    fontSize: 12,
-    color: Colors.tertiary,
-    marginTop: 2,
-  },
-  capsulePrice: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.primaryContainer,
-  },
-  calendarCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    shadowColor: Colors.charcoal,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  monthHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: 10,
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: Colors.hairlineBorder,
   },
-  monthNavBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+  backBtn: {
+    padding: 6,
   },
-  monthTitle: {
-    fontSize: 13,
+  headerTitle: {
+    fontSize: 16,
     fontWeight: '700',
-    color: Colors.onSurface,
-    letterSpacing: 0.5,
+    color: Colors.charcoal,
   },
-  calendarGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: 12,
-  },
-  calendarDatePill: {
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderRadius: 20,
-    minWidth: 40,
-  },
-  calendarDatePillActive: {
-    backgroundColor: Colors.primaryContainer,
-    shadowColor: Colors.primaryContainer,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  calendarDatePillDisabled: {
-    opacity: 0.35,
-  },
-  calDayLabel: {
-    fontSize: 11,
-    color: Colors.tertiary,
-    fontWeight: '500',
-  },
-  calDayLabelActive: {
-    color: Colors.onPrimary,
-    fontWeight: '700',
-  },
-  calDayLabelDisabled: {
-    color: Colors.outlineVariant,
-  },
-  calDayNum: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.onSurface,
-    marginTop: 4,
-  },
-  calDayNumActive: {
-    color: Colors.onPrimary,
-    fontWeight: '700',
-  },
-  calDayNumDisabled: {
-    color: Colors.outlineVariant,
-  },
-  sectionBox: {
-    gap: 10,
-  },
-  sectionTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sectionHeading: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  timeZoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  timeZoneText: {
-    fontSize: 11,
-    color: Colors.tertiary,
-  },
-  slotGroupLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.tertiary,
-    letterSpacing: 0.8,
-  },
-  slotGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  slotButton: {
+  scrollView: {
     flex: 1,
-    backgroundColor: Colors.surfaceContainerLowest,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    shadowColor: Colors.charcoal,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
+    backgroundColor: Colors.background,
   },
-  slotButtonActive: {
-    backgroundColor: Colors.primaryContainer,
-    borderColor: Colors.primaryContainer,
-    shadowColor: Colors.primaryContainer,
-    shadowOpacity: 0.3,
+  content: {
+    padding: 16,
+    paddingBottom: 40,
   },
-  slotButtonDisabled: {
-    backgroundColor: Colors.surfaceContainerLow,
-    opacity: 0.5,
-  },
-  slotButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.onSurface,
-  },
-  slotButtonTextActive: {
-    color: Colors.onPrimary,
-    fontWeight: '700',
-  },
-  slotButtonTextDisabled: {
-    color: Colors.tertiary,
-    textDecorationLine: 'line-through',
-  },
-  therapistNote: {
-    fontSize: 11,
-    color: Colors.primaryContainer,
-    fontWeight: '600',
-  },
-  therapistsGrid: {
-    gap: 10,
-  },
-  therapistCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  therapistCardActive: {
-    borderColor: Colors.primaryContainer,
-    shadowColor: Colors.primaryContainer,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  activeTherapistBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    backgroundColor: Colors.primaryContainer,
-  },
-  therapistCardImg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.secondaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: Colors.primaryContainer,
-  },
-  therapistCardInitials: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  therapistCardInfo: {
-    flex: 1,
-  },
-  therapistCardName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  therapistCardTitle: {
-    fontSize: 12,
-    color: Colors.tertiary,
-    marginTop: 2,
-  },
-  therapistCardTitleActive: {
-    color: Colors.primaryContainer,
-    fontWeight: '600',
-  },
-  stickyFooterDrawer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderTopWidth: 1,
-    borderTopColor: Colors.hairlineBorder,
-    shadowColor: Colors.primaryContainer,
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 8,
-    gap: 12,
-  },
-  drawerSummaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  drawerLeft: {
-    flex: 1,
-  },
-  drawerCheckRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  drawerSelectedTime: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.primaryContainer,
-  },
-  drawerSubText: {
-    fontSize: 11,
-    color: Colors.tertiary,
-    marginTop: 2,
-  },
-  drawerRight: {
-    alignItems: 'flex-end',
-  },
-  totalLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.tertiary,
-    letterSpacing: 0.8,
-  },
-  totalPrice: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  continueToPaymentBtn: {
-    backgroundColor: Colors.primaryContainer,
-    borderRadius: 14,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: Colors.primaryContainer,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  continueBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.onPrimary,
-  },
-  demoDisclaimerBox: {
-    backgroundColor: Colors.aquaTint,
-    borderRadius: 12,
-    padding: 12,
-    flexDirection: 'row',
-    gap: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(15, 166, 173, 0.25)',
-  },
-  demoDisclaimerTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.primary,
-  },
-  demoDisclaimerText: {
-    fontSize: 12,
-    color: Colors.onSecondaryContainer,
-    lineHeight: 17,
-    marginTop: 2,
-  },
-  receiptBox: {
-    backgroundColor: Colors.surfaceContainerLowest,
+  stepSection: {
+    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: Colors.hairlineBorder,
+  },
+  stepTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  stepNumberBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumberText: {
+    color: Colors.onPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stepTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.charcoal,
+  },
+  servicesList: {
     gap: 10,
   },
-  receiptHeader: {
+  serviceOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.aquaTint,
+  },
+  serviceOptionCardSelected: {
+    backgroundColor: '#ffffff',
+    borderColor: Colors.primary,
+  },
+  serviceOptionRadio: {
+    marginRight: 10,
+    marginTop: 2,
+  },
+  serviceOptionInfo: {
+    flex: 1,
+  },
+  serviceNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
+  serviceOptionName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.charcoal,
+  },
+  serviceOptionNameSelected: {
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  serviceOptionPrice: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.onSurface,
-    marginBottom: 4,
+    color: Colors.primary,
   },
-  receiptRow: {
+  serviceOptionMeta: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.mutedSlate,
+    marginBottom: 2,
+  },
+  serviceOptionTagline: {
+    fontSize: 12,
+    color: Colors.mutedSlate,
+  },
+  therapistGrid: {
+    gap: 10,
+  },
+  therapistOptionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.aquaTint,
+  },
+  therapistOptionCardSelected: {
+    backgroundColor: '#ffffff',
+    borderColor: Colors.primary,
+  },
+  avatarCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.aquaTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarCircleSelected: {
+    backgroundColor: Colors.primary,
+  },
+  therapistInfo: {
+    flex: 1,
+  },
+  therapistName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.charcoal,
+  },
+  therapistRole: {
+    fontSize: 12,
+    color: Colors.mutedSlate,
+    marginTop: 2,
+  },
+  dateScroll: {
+    marginBottom: 16,
+  },
+  dateCard: {
+    width: 60,
+    height: 70,
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.aquaTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  dateCardSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  dateCardDay: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.mutedSlate,
+  },
+  dateCardNum: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.charcoal,
+    marginVertical: 2,
+  },
+  dateCardMonth: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: Colors.mutedSlate,
+  },
+  dateCardTextSelected: {
+    color: Colors.onPrimary,
+  },
+  slotsHeader: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.mutedSlate,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  slotsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  slotCard: {
+    width: '31%',
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.aquaTint,
+  },
+  slotCardSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  slotCardBooked: {
+    backgroundColor: Colors.surfaceContainerHigh,
+    borderColor: Colors.hairlineBorder,
+    opacity: 0.5,
+  },
+  slotCardText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.charcoal,
+  },
+  slotCardTextSelected: {
+    color: Colors.onPrimary,
+  },
+  slotCardTextBooked: {
+    color: Colors.mutedSlate,
+  },
+  bookedLabel: {
+    fontSize: 9,
+    color: Colors.error,
+    fontWeight: '600',
+  },
+  primaryActionBtn: {
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  primaryActionBtnSub: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  primaryActionBtnText: {
+    color: Colors.onPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  reviewContainer: {
+    gap: 16,
+  },
+  summaryCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: Colors.hairlineBorder,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.charcoal,
+    marginBottom: 14,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: Colors.mutedSlate,
+  },
+  summaryValue: {
+    fontSize: 13,
+    color: Colors.charcoal,
+    fontWeight: '500',
+  },
+  summaryValueBold: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.charcoal,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.hairlineBorder,
+    marginVertical: 12,
+  },
+  totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  receiptLabel: {
-    fontSize: 13,
-    color: Colors.onSurfaceVariant,
-  },
-  receiptVal: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.onSurface,
-  },
-  receiptDivider: {
-    height: 1,
-    backgroundColor: Colors.surfaceContainer,
-    marginVertical: 4,
-  },
-  receiptTotalLabel: {
-    fontSize: 14,
+  totalLabel: {
+    fontSize: 15,
     fontWeight: '700',
-    color: Colors.onSurface,
+    color: Colors.charcoal,
   },
-  receiptTotalVal: {
-    fontSize: 16,
+  totalValue: {
+    fontSize: 20,
     fontWeight: '800',
     color: Colors.primary,
   },
-  paymentMethodsBox: {
-    backgroundColor: Colors.surfaceContainerLowest,
+  paymentSection: {
+    backgroundColor: '#ffffff',
     borderRadius: 16,
-    padding: 16,
+    padding: 18,
     borderWidth: 1,
     borderColor: Colors.hairlineBorder,
-    gap: 10,
   },
-  methodsTitle: {
-    fontSize: 14,
+  paymentSectionTitle: {
+    fontSize: 15,
     fontWeight: '700',
-    color: Colors.onSurface,
-    marginBottom: 4,
+    color: Colors.charcoal,
+    marginBottom: 12,
   },
-  methodOption: {
+  paymentMethodCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    gap: 12,
+    backgroundColor: Colors.aquaMist,
+    padding: 14,
     borderRadius: 12,
-    backgroundColor: Colors.surfaceContainerLow,
-    borderWidth: 1,
-    borderColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: Colors.aquaTint,
+    marginBottom: 10,
   },
-  methodOptionActive: {
-    backgroundColor: Colors.aquaTint,
-    borderColor: Colors.primaryContainer,
+  paymentMethodCardSelected: {
+    backgroundColor: '#ffffff',
+    borderColor: Colors.primary,
   },
-  methodName: {
-    fontSize: 13,
+  paymentMethodInfo: {
+    flex: 1,
+  },
+  paymentMethodName: {
+    fontSize: 14,
     fontWeight: '700',
-    color: Colors.onSurface,
+    color: Colors.charcoal,
   },
-  methodSub: {
-    fontSize: 11,
-    color: Colors.tertiary,
-    marginTop: 1,
+  paymentMethodDesc: {
+    fontSize: 12,
+    color: Colors.mutedSlate,
+    marginTop: 2,
   },
-  confirmedHeroCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: Colors.success,
+  successContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: Colors.success,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: Colors.hairlineBorder,
   },
-  successHeading: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.onSurface,
+  successIconCircle: {
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: Colors.charcoal,
     textAlign: 'center',
+    marginBottom: 8,
   },
   successSubtitle: {
     fontSize: 13,
-    color: Colors.tertiary,
+    color: Colors.mutedSlate,
     textAlign: 'center',
-    lineHeight: 19,
-    marginTop: 6,
-    paddingHorizontal: 16,
+    lineHeight: 20,
+    marginBottom: 20,
   },
-  confirmedCard: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
+  successDetailsCard: {
     width: '100%',
-    marginTop: 20,
-    overflow: 'hidden',
+    backgroundColor: Colors.aquaMist,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.aquaTint,
+    marginBottom: 20,
   },
-  confirmedCardHeader: {
-    backgroundColor: Colors.aquaTint,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  confirmedRefNum: {
-    fontSize: 11,
+  successDetailsHeader: {
+    fontSize: 13,
     fontWeight: '700',
     color: Colors.primary,
-    letterSpacing: 0.5,
+    marginBottom: 8,
   },
-  confirmedStatusTag: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: Colors.success,
-  },
-  confirmedDetailsBody: {
-    padding: 16,
-    gap: 8,
-  },
-  confirmedService: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.onSurface,
-  },
-  confirmedTherapist: {
-    fontSize: 13,
-    color: Colors.tertiary,
-  },
-  confirmedMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
-  },
-  confirmedMetaText: {
+  successLine: {
     fontSize: 12,
-    color: Colors.onSurfaceVariant,
-    flex: 1,
-  },
-  confirmedActions: {
-    width: '100%',
-    gap: 12,
-    marginTop: 24,
-  },
-  primaryActionButton: {
-    backgroundColor: Colors.primaryContainer,
-    borderRadius: 14,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  primaryActionText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.onPrimary,
-  },
-  secondaryActionButton: {
-    backgroundColor: Colors.surfaceContainerLowest,
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.hairlineBorder,
-  },
-  secondaryActionText: {
-    fontSize: 13,
-    fontWeight: '600',
     color: Colors.charcoal,
+    lineHeight: 20,
   },
 });

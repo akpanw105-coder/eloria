@@ -9,6 +9,7 @@ import {
   NotificationSettings,
   ClinicAvailabilitySettings,
 } from '../types';
+import { INITIAL_SERVICES, INITIAL_THERAPISTS } from '../mock/initialData';
 
 // ==========================================
 // Mappers: Database (snake_case) <-> Frontend (camelCase)
@@ -22,12 +23,16 @@ export function mapProfileToUser(row: any): User {
   ];
   const memberSinceFormatted = `${monthNames[memberDate.getMonth()]} ${memberDate.getFullYear()}`;
 
+  // Enforce admin role if email is admin@gmail.com
+  const isDedicatedAdmin = row.email?.toLowerCase() === 'admin@gmail.com';
+  const role = isDedicatedAdmin ? 'admin' : (row.role === 'admin' ? 'admin' : 'customer');
+
   return {
     id: row.id,
-    name: row.full_name || 'Sanctuary Guest',
+    name: row.full_name || (isDedicatedAdmin ? 'Eloria Administrator' : 'Sanctuary Client'),
     email: row.email || '',
     phone: row.phone || '',
-    role: row.role || 'customer',
+    role,
     avatarUrl: '',
     memberSince: memberSinceFormatted,
     notes: row.notes || undefined,
@@ -42,7 +47,7 @@ export function mapService(row: any): MassageService {
     description: row.description || '',
     durationMinutes: row.duration_minutes || 60,
     price: Number(row.price) || 0,
-    iconName: row.icon_name || 'flower-outline',
+    iconName: row.icon_name || 'sparkles-outline',
     badge: row.badge || '',
     isActive: row.is_active ?? true,
   };
@@ -62,28 +67,34 @@ export function mapTherapist(row: any): Therapist {
 }
 
 export function mapAppointment(row: any): Appointment {
+  const service = row.services;
+  const therapist = row.therapists;
+  const profile = row.profiles;
+
+  const appointmentDate = typeof row.appointment_date === 'string' ? row.appointment_date.split('T')[0] : '';
+
   return {
     id: row.id,
-    customerId: row.customer_id,
-    customerName: row.customer_name || 'Client',
-    customerEmail: row.customer_email || '',
-    customerPhone: row.customer_phone || '',
-    serviceId: row.service_id,
-    serviceName: row.service_name || 'Treatment',
-    durationMinutes: row.duration_minutes || 60,
-    price: Number(row.price) || 0,
-    therapistId: row.therapist_id,
-    therapistName: row.therapist_name || 'Therapist',
+    customerId: row.customer_id || '',
+    customerName: profile?.full_name || 'Client',
+    customerEmail: profile?.email || '',
+    customerPhone: profile?.phone || '',
+    serviceId: row.service_id || '',
+    serviceName: service?.name || 'Massage Therapy',
+    durationMinutes: service?.duration_minutes || 60,
+    price: Number(row.price) || (service ? Number(service.price) : 0),
+    therapistId: row.therapist_id || null,
+    therapistName: therapist?.name || (row.therapist_id ? 'Specialist' : 'Any Available Therapist'),
     therapistAvatar: '',
-    date: row.appointment_date,
+    date: appointmentDate,
     timeSlot: row.time_slot,
-    status: row.status,
+    status: row.status || 'pending',
     location: row.location || 'Eloria Wellness Suite A',
     notes: row.notes || undefined,
     createdAt: row.created_at,
     paidAmount: Number(row.paid_amount) || 0,
     paymentMethod: row.payment_method || 'card',
-    paymentStatus: row.payment_status || 'paid',
+    paymentStatus: row.payment_status || 'pending',
   };
 }
 
@@ -102,7 +113,6 @@ export function mapReview(row: any): ClientReview {
 }
 
 export function mapNotification(row: any): NotificationItem {
-  // calculate time ago
   const created = new Date(row.created_at);
   const diffSec = Math.floor((Date.now() - created.getTime()) / 1000);
   let timeAgo = 'Just now';
@@ -135,7 +145,7 @@ export function mapNotificationSettings(row: any): NotificationSettings {
       smsAlerts: true,
       bookingUpdates: true,
       promotions: false,
-      reminderHoursAhead: 24,
+      reminderHoursAhead: 2, // 2-hour reminder requirement
     };
   }
   return {
@@ -143,7 +153,7 @@ export function mapNotificationSettings(row: any): NotificationSettings {
     smsAlerts: row.sms_alerts ?? true,
     bookingUpdates: row.booking_updates ?? true,
     promotions: row.promotions ?? false,
-    reminderHoursAhead: row.reminder_hours_ahead ?? 24,
+    reminderHoursAhead: row.reminder_hours_ahead ?? 2,
   };
 }
 
@@ -224,9 +234,12 @@ export const EloriaApi = {
     const { data, error } = await query;
     if (error) {
       console.warn('EloriaApi.getServices error:', error.message);
-      return [];
+      return INITIAL_SERVICES;
     }
-    return (data || []).map(mapService);
+    if (!data || data.length === 0) {
+      return INITIAL_SERVICES;
+    }
+    return data.map(mapService);
   },
 
   async saveService(service: Partial<MassageService> & { name: string; price: number; durationMinutes: number }): Promise<MassageService> {
@@ -236,12 +249,12 @@ export const EloriaApi = {
       description: service.description || '',
       duration_minutes: service.durationMinutes,
       price: service.price,
-      icon_name: service.iconName || 'sparkles',
+      icon_name: service.iconName || 'sparkles-outline',
       badge: service.badge || 'Therapeutic',
       is_active: service.isActive ?? true,
     };
 
-    if (service.id) {
+    if (service.id && !service.id.startsWith('srv-')) {
       const { data, error } = await supabase
         .from('services')
         .update(payload)
@@ -281,14 +294,25 @@ export const EloriaApi = {
 
     if (error) {
       console.warn('EloriaApi.getTherapists error:', error.message);
-      return [];
+      return INITIAL_THERAPISTS;
     }
-    return (data || []).map(mapTherapist);
+    if (!data || data.length === 0) {
+      return INITIAL_THERAPISTS;
+    }
+    return data.map(mapTherapist);
   },
 
   // Appointments
   async getAppointments(customerId?: string, isAdmin = false): Promise<Appointment[]> {
-    let query = supabase.from('appointments').select('*').order('created_at', { ascending: false });
+    let query = supabase
+      .from('appointments')
+      .select(`
+        *,
+        services:service_id ( id, name, duration_minutes, price ),
+        therapists:therapist_id ( id, name ),
+        profiles:customer_id ( id, full_name, email, phone )
+      `)
+      .order('appointment_date', { ascending: false });
 
     if (!isAdmin && customerId) {
       query = query.eq('customer_id', customerId);
@@ -302,11 +326,19 @@ export const EloriaApi = {
     return (data || []).map(mapAppointment);
   },
 
-  async createAppointment(
-    data: Omit<Appointment, 'id' | 'createdAt' | 'paymentStatus'> & {
-      paymentStatus?: Appointment['paymentStatus'];
-    }
-  ): Promise<Appointment> {
+  async createAppointment(data: {
+    customerId: string;
+    serviceId: string;
+    therapistId: string | null;
+    date: string; // YYYY-MM-DD
+    timeSlot: string; // e.g. "10:30 AM"
+    price: number;
+    notes?: string;
+    location?: string;
+    paymentMethod: Appointment['paymentMethod'];
+    paymentStatus?: Appointment['paymentStatus'];
+    status?: Appointment['status'];
+  }): Promise<Appointment> {
     // Check for double booking conflicts on the same therapist, date, and timeSlot
     if (data.therapistId && data.date && data.timeSlot) {
       const { data: conflicts, error: checkError } = await supabase
@@ -315,7 +347,8 @@ export const EloriaApi = {
         .eq('therapist_id', data.therapistId)
         .eq('appointment_date', data.date)
         .eq('time_slot', data.timeSlot)
-        .neq('status', 'cancelled');
+        .neq('status', 'cancelled')
+        .neq('status', 'rejected');
 
       if (!checkError && conflicts && conflicts.length > 0) {
         throw new Error('This specialist is already booked for that time slot. Please choose another time.');
@@ -324,38 +357,37 @@ export const EloriaApi = {
 
     const dbPayload = {
       customer_id: data.customerId,
-      customer_name: data.customerName,
-      customer_email: data.customerEmail,
-      customer_phone: data.customerPhone,
       service_id: data.serviceId,
-      service_name: data.serviceName,
-      duration_minutes: data.durationMinutes,
-      price: data.price,
-      therapist_id: data.therapistId,
-      therapist_name: data.therapistName,
+      therapist_id: data.therapistId || null,
       appointment_date: data.date,
       time_slot: data.timeSlot,
-      status: data.status || 'confirmed',
+      price: data.price,
+      paid_amount: data.paymentStatus === 'paid' ? data.price : 0,
+      payment_method: data.paymentMethod || 'card',
+      payment_status: data.paymentStatus || 'pending',
+      status: data.status || 'pending',
       location: data.location || 'Eloria Wellness Suite A',
       notes: data.notes || '',
-      paid_amount: data.paidAmount || data.price,
-      payment_method: data.paymentMethod || 'card',
-      payment_status: data.paymentStatus || 'paid',
     };
 
     const { data: inserted, error } = await supabase
       .from('appointments')
       .insert(dbPayload)
-      .select()
+      .select(`
+        *,
+        services:service_id ( id, name, duration_minutes, price ),
+        therapists:therapist_id ( id, name ),
+        profiles:customer_id ( id, full_name, email, phone )
+      `)
       .single();
 
     if (error) throw error;
 
-    // Create a notification for the customer
+    // Create a confirmation notification for the client
     await this.addNotification({
       userId: data.customerId,
-      title: 'Appointment Booked',
-      message: `${data.serviceName} scheduled for ${data.date} at ${data.timeSlot}.`,
+      title: 'Booking Request Received',
+      message: `Your appointment request for ${data.date} at ${data.timeSlot} has been submitted. Status: Pending confirmation.`,
       type: 'booking',
       appointmentId: inserted.id,
     }).catch((e) => console.warn('Failed to insert notification:', e));
@@ -363,24 +395,50 @@ export const EloriaApi = {
     return mapAppointment(inserted);
   },
 
-  async updateAppointmentStatus(id: string, status: Appointment['status'], customerId?: string): Promise<void> {
+  async updateAppointmentStatus(
+    id: string,
+    status: Appointment['status'],
+    adminNotes?: string,
+    therapistId?: string | null
+  ): Promise<void> {
+    const payload: any = { status, updated_at: new Date().toISOString() };
+    if (therapistId !== undefined) {
+      payload.therapist_id = therapistId;
+    }
+    if (adminNotes !== undefined) {
+      payload.notes = adminNotes;
+    }
+
     const { data, error } = await supabase
       .from('appointments')
-      .update({ status })
+      .update(payload)
       .eq('id', id)
-      .select()
+      .select('customer_id, appointment_date, time_slot')
       .single();
 
     if (error) throw error;
 
-    if (status === 'cancelled' && (customerId || data?.customer_id)) {
+    if (data?.customer_id) {
+      let title = 'Booking Update';
+      let message = `Your appointment on ${data.appointment_date} status has been updated to: ${status.toUpperCase()}.`;
+      if (status === 'confirmed') {
+        title = 'Appointment Confirmed!';
+        message = `Your booking on ${data.appointment_date} at ${data.time_slot} is now confirmed. We look forward to welcoming you.`;
+      } else if (status === 'rejected') {
+        title = 'Appointment Request Declined';
+        message = `Your booking request for ${data.appointment_date} could not be confirmed. Please contact us or select another time.`;
+      } else if (status === 'cancelled') {
+        title = 'Appointment Cancelled';
+        message = `Your booking on ${data.appointment_date} has been cancelled.`;
+      }
+
       await this.addNotification({
-        userId: customerId || data.customer_id,
-        title: 'Appointment Cancelled',
-        message: `Your booking on ${data.appointment_date} has been cancelled.`,
+        userId: data.customer_id,
+        title,
+        message,
         type: 'booking',
         appointmentId: id,
-      }).catch((e) => console.warn('Failed to insert cancel notification:', e));
+      }).catch((e) => console.warn('Failed to insert status notification:', e));
     }
   },
 
@@ -388,7 +446,7 @@ export const EloriaApi = {
     id: string,
     newDate: string,
     newTimeSlot: string,
-    therapistId?: string,
+    therapistId?: string | null,
     customerId?: string
   ): Promise<void> {
     // Conflict check
@@ -400,10 +458,11 @@ export const EloriaApi = {
         .eq('appointment_date', newDate)
         .eq('time_slot', newTimeSlot)
         .neq('status', 'cancelled')
+        .neq('status', 'rejected')
         .neq('id', id);
 
       if (conflicts && conflicts.length > 0) {
-        throw new Error('This time slot is unavailable. Please select another slot.');
+        throw new Error('This time slot is unavailable for the selected specialist. Please choose another time.');
       }
     }
 
@@ -412,10 +471,11 @@ export const EloriaApi = {
       .update({
         appointment_date: newDate,
         time_slot: newTimeSlot,
-        status: 'confirmed',
+        status: 'pending', // Re-enter pending verification upon reschedule
+        updated_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .select()
+      .select('customer_id')
       .single();
 
     if (error) throw error;
@@ -425,7 +485,7 @@ export const EloriaApi = {
       await this.addNotification({
         userId: targetUserId,
         title: 'Appointment Rescheduled',
-        message: `Updated to ${newDate} at ${newTimeSlot}.`,
+        message: `Your booking has been updated to ${newDate} at ${newTimeSlot} (pending confirmation).`,
         type: 'booking',
         appointmentId: id,
       }).catch((e) => console.warn('Failed to insert reschedule notification:', e));
@@ -516,33 +576,7 @@ export const EloriaApi = {
     if (error) throw error;
   },
 
-  // Preferences & Business Settings
-  async getNotificationSettings(userId: string): Promise<NotificationSettings> {
-    const { data, error } = await supabase
-      .from('notification_preferences')
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (error) console.warn('getNotificationSettings error:', error.message);
-    return mapNotificationSettings(data);
-  },
-
-  async updateNotificationSettings(userId: string, settings: Partial<NotificationSettings>): Promise<void> {
-    const dbPayload: any = { user_id: userId };
-    if (settings.emailReminders !== undefined) dbPayload.email_reminders = settings.emailReminders;
-    if (settings.smsAlerts !== undefined) dbPayload.sms_alerts = settings.smsAlerts;
-    if (settings.bookingUpdates !== undefined) dbPayload.booking_updates = settings.bookingUpdates;
-    if (settings.promotions !== undefined) dbPayload.promotions = settings.promotions;
-    if (settings.reminderHoursAhead !== undefined) dbPayload.reminder_hours_ahead = settings.reminderHoursAhead;
-
-    const { error } = await supabase
-      .from('notification_preferences')
-      .upsert(dbPayload, { onConflict: 'user_id' });
-
-    if (error) throw error;
-  },
-
+  // Business Settings
   async getBusinessSettings(): Promise<ClinicAvailabilitySettings> {
     const { data, error } = await supabase
       .from('business_settings')

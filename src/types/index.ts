@@ -17,7 +17,7 @@ export interface MassageService {
   tagline: string;
   description: string;
   durationMinutes: number;
-  price: number;
+  price: number; // in NGN (Nigerian Naira)
   iconName: string;
   badge: string;
   isActive: boolean;
@@ -29,12 +29,16 @@ export interface Therapist {
   title: string;
   rating: number;
   reviewsCount: number;
-  avatarUrl: string;
+  avatarUrl?: string;
   specialties: string[];
   bio: string;
 }
 
-export type AppointmentStatus = 'confirmed' | 'completed' | 'cancelled' | 'rescheduled';
+export type AppointmentStatus = 'pending' | 'confirmed' | 'rejected' | 'completed' | 'cancelled';
+
+export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
+
+export type PaymentMethod = 'card' | 'bank_transfer' | 'apple_pay' | 'cash';
 
 export interface Appointment {
   id: string;
@@ -46,9 +50,9 @@ export interface Appointment {
   serviceName: string;
   durationMinutes: number;
   price: number;
-  therapistId: string;
+  therapistId: string | null;
   therapistName: string;
-  therapistAvatar: string;
+  therapistAvatar?: string;
   date: string; // YYYY-MM-DD
   timeSlot: string; // e.g. "10:30 AM"
   status: AppointmentStatus;
@@ -56,8 +60,8 @@ export interface Appointment {
   notes?: string;
   createdAt: string;
   paidAmount: number;
-  paymentMethod: 'card' | 'apple_pay' | 'cash';
-  paymentStatus: 'paid' | 'refunded' | 'pending';
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
 }
 
 export interface ClientReview {
@@ -94,7 +98,7 @@ export interface ClinicAvailabilitySettings {
   openTime: string;
   closeTime: string;
   slotDurationMinutes: number;
-  daysOpen: string[]; // e.g. ['Monday', 'Tuesday', ...]
+  daysOpen: string[];
   allowSameDayBooking: boolean;
   maxAdvanceDays: number;
 }
