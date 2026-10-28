@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,13 @@ import { formatNaira } from '../mock/initialData';
 
 export default function CustomerHomeScreen() {
   const { currentUser, services, appointments, refreshAll, isLoading } = useApp();
+
+  // If authenticated as admin, automatically redirect to admin workspace
+  useEffect(() => {
+    if (currentUser?.role === 'admin') {
+      router.replace('/admin');
+    }
+  }, [currentUser]);
 
   // Next upcoming confirmed or pending appointment for this client
   const activeAppointment = appointments.find((a) => a.status === 'confirmed' || a.status === 'pending');

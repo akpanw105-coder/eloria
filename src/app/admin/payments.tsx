@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '../../components/AppHeader';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { AuthGuard } from '../../components/AuthGuard';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 import { formatNaira } from '../../mock/initialData';
@@ -35,7 +36,8 @@ export default function AdminPaymentsScreen() {
     .reduce((sum, a) => sum + (a.price || 0), 0);
 
   return (
-    <ScreenContainer>
+    <AuthGuard requiredRole="admin">
+      <ScreenContainer>
       <AppHeader
         title="Ledger & Payments"
         subtitle="Financial Overview"
@@ -175,6 +177,7 @@ export default function AdminPaymentsScreen() {
 
       <AdminTabBar />
     </ScreenContainer>
+    </AuthGuard>
   );
 }
 

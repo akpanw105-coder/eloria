@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppHeader } from '../../components/AppHeader';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { AuthGuard } from '../../components/AuthGuard';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 
@@ -23,7 +24,8 @@ export default function AdminReviewsScreen() {
       : '5.0';
 
   return (
-    <ScreenContainer>
+    <AuthGuard requiredRole="admin">
+      <ScreenContainer>
       <AppHeader
         title="Client Feedback"
         subtitle="Quality & Ratings"
@@ -99,6 +101,7 @@ export default function AdminReviewsScreen() {
 
       <AdminTabBar />
     </ScreenContainer>
+    </AuthGuard>
   );
 }
 

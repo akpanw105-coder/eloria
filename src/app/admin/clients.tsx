@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { AuthGuard } from '../../components/AuthGuard';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 
@@ -33,107 +34,109 @@ export default function AdminClientsScreen() {
       .reduce((sum, a) => sum + a.price, 0);
 
   return (
-    <ScreenContainer>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Client Records</Text>
-        <Text style={styles.headerCount}>{allUsers.length} clients</Text>
-      </View>
+    <AuthGuard requiredRole="admin">
+      <ScreenContainer>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Client Records</Text>
+          <Text style={styles.headerCount}>{allUsers.length} clients</Text>
+        </View>
 
-      {/* Search Bar */}
-      <View style={styles.searchWrap}>
-        <Ionicons name="search-outline" size={18} color={Colors.mutedSlate} />
-        <TextInput
-          style={styles.searchInput}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search clients by name or email…"
-          placeholderTextColor={Colors.outline}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={18} color={Colors.mutedSlate} />
-          </TouchableOpacity>
-        )}
-      </View>
+        {/* Search Bar */}
+        <View style={styles.searchWrap}>
+          <Ionicons name="search-outline" size={18} color={Colors.mutedSlate} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search clients by name or email…"
+            placeholderTextColor={Colors.outline}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color={Colors.mutedSlate} />
+            </TouchableOpacity>
+          )}
+        </View>
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} tintColor={Colors.primary} />}
-      >
-        {filteredClients.length === 0 && (
-          <View style={styles.emptyBox}>
-            <Ionicons name="people-outline" size={40} color={Colors.outlineVariant} />
-            <Text style={styles.emptyText}>
-              {searchQuery ? 'No clients match your search.' : 'No client records found. Clients appear here after they register and sign in.'}
-            </Text>
-          </View>
-        )}
-
-        {filteredClients.map((client) => {
-          const aptCount = getClientAppointmentCount(client.id);
-          const totalSpend = getClientTotalSpend(client.id);
-          const initials = client.name
-            .split(' ')
-            .map((n) => n.charAt(0).toUpperCase())
-            .join('')
-            .slice(0, 2);
-
-          return (
-            <View key={client.id} style={styles.clientCard}>
-              <View style={styles.clientCardTop}>
-                <View
-                  style={[
-                    styles.avatarCircle,
-                    client.role === 'admin' && styles.avatarCircleAdmin,
-                  ]}
-                >
-                  <Text style={styles.avatarInitials}>{initials}</Text>
-                </View>
-
-                <View style={styles.clientInfo}>
-                  <View style={styles.clientNameRow}>
-                    <Text style={styles.clientName}>{client.name}</Text>
-                    {client.role === 'admin' && (
-                      <View style={styles.adminChip}>
-                        <Ionicons name="shield-checkmark" size={10} color={Colors.primary} />
-                        <Text style={styles.adminChipText}>Admin</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.clientEmail}>{client.email}</Text>
-                  {client.phone ? (
-                    <Text style={styles.clientPhone}>{client.phone}</Text>
-                  ) : null}
-                </View>
-              </View>
-
-              <View style={styles.clientStatsRow}>
-                <View style={styles.clientStat}>
-                  <Text style={styles.clientStatNum}>{aptCount}</Text>
-                  <Text style={styles.clientStatLabel}>Total Bookings</Text>
-                </View>
-                <View style={styles.clientStatDivider} />
-                <View style={styles.clientStat}>
-                  <Text style={styles.clientStatNum}>
-                    ₦{Number(totalSpend).toLocaleString('en-NG')}
-                  </Text>
-                  <Text style={styles.clientStatLabel}>Total Paid</Text>
-                </View>
-                <View style={styles.clientStatDivider} />
-                <View style={styles.clientStat}>
-                  <Text style={styles.clientStatNum}>{client.memberSince}</Text>
-                  <Text style={styles.clientStatLabel}>Member Since</Text>
-                </View>
-              </View>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refreshAll} tintColor={Colors.primary} />}
+        >
+          {filteredClients.length === 0 && (
+            <View style={styles.emptyBox}>
+              <Ionicons name="people-outline" size={40} color={Colors.outlineVariant} />
+              <Text style={styles.emptyText}>
+                {searchQuery ? 'No clients match your search.' : 'No client records found. Clients appear here after they register and sign in.'}
+              </Text>
             </View>
-          );
-        })}
-      </ScrollView>
+          )}
 
-      <AdminTabBar />
-    </ScreenContainer>
+          {filteredClients.map((client) => {
+            const aptCount = getClientAppointmentCount(client.id);
+            const totalSpend = getClientTotalSpend(client.id);
+            const initials = client.name
+              .split(' ')
+              .map((n) => n.charAt(0).toUpperCase())
+              .join('')
+              .slice(0, 2);
+
+            return (
+              <View key={client.id} style={styles.clientCard}>
+                <View style={styles.clientCardTop}>
+                  <View
+                    style={[
+                      styles.avatarCircle,
+                      client.role === 'admin' && styles.avatarCircleAdmin,
+                    ]}
+                  >
+                    <Text style={styles.avatarInitials}>{initials}</Text>
+                  </View>
+
+                  <View style={styles.clientInfo}>
+                    <View style={styles.clientNameRow}>
+                      <Text style={styles.clientName}>{client.name}</Text>
+                      {client.role === 'admin' && (
+                        <View style={styles.adminChip}>
+                          <Ionicons name="shield-checkmark" size={10} color={Colors.primary} />
+                          <Text style={styles.adminChipText}>Admin</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.clientEmail}>{client.email}</Text>
+                    {client.phone ? (
+                      <Text style={styles.clientPhone}>{client.phone}</Text>
+                    ) : null}
+                  </View>
+                </View>
+
+                <View style={styles.clientStatsRow}>
+                  <View style={styles.clientStat}>
+                    <Text style={styles.clientStatNum}>{aptCount}</Text>
+                    <Text style={styles.clientStatLabel}>Total Bookings</Text>
+                  </View>
+                  <View style={styles.clientStatDivider} />
+                  <View style={styles.clientStat}>
+                    <Text style={styles.clientStatNum}>
+                      ₦{Number(totalSpend).toLocaleString('en-NG')}
+                    </Text>
+                    <Text style={styles.clientStatLabel}>Total Paid</Text>
+                  </View>
+                  <View style={styles.clientStatDivider} />
+                  <View style={styles.clientStat}>
+                    <Text style={styles.clientStatNum}>{client.memberSince}</Text>
+                    <Text style={styles.clientStatLabel}>Member Since</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+
+        <AdminTabBar />
+      </ScreenContainer>
+    </AuthGuard>
   );
 }
 

@@ -12,6 +12,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { AuthGuard } from '../../components/AuthGuard';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 import { Appointment } from '../../types';
@@ -20,26 +21,6 @@ import { formatNaira } from '../../mock/initialData';
 export default function AdminDashboard() {
   const { currentUser, appointments, services, therapists, allUsers, updateBookingStatus, refreshAll, isLoading, logout } = useApp();
   const [processingId, setProcessingId] = useState<string | null>(null);
-
-  // Redirect non-admins
-  if (currentUser && currentUser.role !== 'admin') {
-    router.replace('/');
-    return null;
-  }
-
-  if (!currentUser) {
-    return (
-      <ScreenContainer>
-        <View style={styles.unauthBox}>
-          <Ionicons name="shield-outline" size={48} color={Colors.error} />
-          <Text style={styles.unauthTitle}>Admin Access Required</Text>
-          <TouchableOpacity style={styles.signInBtn} onPress={() => router.replace('/auth')}>
-            <Text style={styles.signInBtnText}>Sign In as Administrator</Text>
-          </TouchableOpacity>
-        </View>
-      </ScreenContainer>
-    );
-  }
 
   const pendingApts = appointments.filter((a) => a.status === 'pending');
   const confirmedApts = appointments.filter((a) => a.status === 'confirmed');
@@ -108,7 +89,8 @@ export default function AdminDashboard() {
   };
 
   return (
-    <ScreenContainer>
+    <AuthGuard requiredRole="admin">
+      <ScreenContainer>
       {/* Admin Header */}
       <View style={styles.adminHeader}>
         <View style={styles.adminHeaderLeft}>
@@ -296,6 +278,7 @@ export default function AdminDashboard() {
 
       <AdminTabBar />
     </ScreenContainer>
+    </AuthGuard>
   );
 }
 

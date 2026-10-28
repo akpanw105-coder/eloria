@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { AuthGuard } from '../../components/AuthGuard';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 import { MassageService } from '../../types';
@@ -113,7 +114,8 @@ export default function AdminServicesScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <AuthGuard requiredRole="admin">
+      <ScreenContainer>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Massage Services</Text>
         <TouchableOpacity style={styles.addBtn} onPress={openAddModal} activeOpacity={0.8}>
@@ -280,6 +282,7 @@ export default function AdminServicesScreen() {
 
       <AdminTabBar />
     </ScreenContainer>
+    </AuthGuard>
   );
 }
 

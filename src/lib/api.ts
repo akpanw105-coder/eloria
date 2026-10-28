@@ -198,6 +198,43 @@ export const EloriaApi = {
     return data ? mapProfileToUser(data) : null;
   },
 
+  async ensureProfile(user: { id: string; email?: string | null; fullName?: string }): Promise<User> {
+    const existing = await this.getProfile(user.id);
+    if (existing) return existing;
+
+    const cleanEmail = (user.email || '').trim().toLowerCase();
+    const isDedicatedAdmin = cleanEmail === 'admin@gmail.com';
+    const role = isDedicatedAdmin ? 'admin' : 'customer';
+    const name = user.fullName || (isDedicatedAdmin ? 'Eloria Administrator' : 'Sanctuary Client');
+
+    // Attempt to insert profile directly (fallback if trigger is pending)
+    const { data, error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: user.id,
+        email: cleanEmail,
+        full_name: name,
+        role: role,
+        member_since: new Date().toISOString(),
+      })
+      .select()
+      .maybeSingle();
+
+    if (!error && data) {
+      return mapProfileToUser(data);
+    }
+
+    return {
+      id: user.id,
+      name,
+      email: cleanEmail,
+      phone: '',
+      role,
+      avatarUrl: '',
+      memberSince: 'Today',
+    };
+  },
+
   async getAllProfiles(): Promise<User[]> {
     const { data, error } = await supabase
       .from('profiles')

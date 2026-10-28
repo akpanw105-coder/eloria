@@ -26,8 +26,9 @@ interface AppContextType {
   authError: string | null;
 
   // Actions
-  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: User['role'] }>;
+  signUp: (email: string, password: string, fullName: string) => Promise<{ success: boolean; error?: string; role?: User['role'] }>;
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   createBooking: (data: {
     serviceId: string;
@@ -108,13 +109,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Fetch or construct profile for current session
-  const syncSessionUser = useCallback(async (session: Session | null) => {
+  const syncSessionUser = useCallback(async (session: Session | null): Promise<User | null> => {
     if (!session?.user) {
       setAuthUser(null);
       setCurrentUser(null);
       setAppointments([]);
       setNotifications([]);
-      return;
+      return null;
     }
 
     setAuthUser(session.user);
@@ -124,25 +125,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Enforce role: admin@gmail.com is strictly admin
     const isDedicatedAdmin = userEmail.toLowerCase() === 'admin@gmail.com';
 
-    // Fetch profile from database
+    // Fetch profile from database, or ensure it exists
     let profile = await EloriaApi.getProfile(userId);
 
     if (!profile) {
-      // Fallback constructed user if trigger was delayed or offline
-      profile = {
+      profile = await EloriaApi.ensureProfile({
         id: userId,
-        name: isDedicatedAdmin ? 'Eloria Administrator' : (session.user.user_metadata?.full_name || userEmail.split('@')[0] || 'Sanctuary Client'),
         email: userEmail,
-        phone: '',
-        role: isDedicatedAdmin ? 'admin' : 'customer',
-        memberSince: 'Today',
-      };
-    } else if (isDedicatedAdmin && profile.role !== 'admin') {
+        fullName: session.user.user_metadata?.full_name,
+      });
+    }
+
+    if (isDedicatedAdmin && profile.role !== 'admin') {
       profile.role = 'admin';
     }
 
     setCurrentUser(profile);
     await loadUserData(profile);
+    return profile;
   }, [loadUserData]);
 
   // Initial mount: load catalog and session
@@ -194,11 +194,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [currentUser, loadCommonData, loadUserData]);
 
   // Sign In with email and password
-  const signIn = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const signIn = async (
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; error?: string; role?: User['role'] }> => {
     setAuthError(null);
     try {
+      const cleanEmail = email.trim().toLowerCase();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         password,
       });
 
@@ -207,10 +211,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, error: error.message };
       }
 
+      let role: User['role'] = cleanEmail === 'admin@gmail.com' ? 'admin' : 'customer';
       if (data.session) {
-        await syncSessionUser(data.session);
+        const profile = await syncSessionUser(data.session);
+        if (profile) {
+          role = profile.role;
+        }
       }
-      return { success: true };
+      return { success: true, role };
     } catch (err: any) {
       const msg = err.message || 'Failed to sign in';
       setAuthError(msg);
@@ -223,17 +231,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     email: string,
     password: string,
     fullName: string
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; role?: User['role'] }> => {
     setAuthError(null);
     try {
       const cleanEmail = email.trim().toLowerCase();
+      const isDedicatedAdmin = cleanEmail === 'admin@gmail.com';
+      const role: User['role'] = isDedicatedAdmin ? 'admin' : 'customer';
+
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
         options: {
           data: {
             full_name: fullName.trim() || 'Sanctuary Client',
-            role: cleanEmail === 'admin@gmail.com' ? 'admin' : 'customer',
+            role,
           },
         },
       });
@@ -246,11 +257,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (data.session) {
         await syncSessionUser(data.session);
       }
-      return { success: true };
+      return { success: true, role };
     } catch (err: any) {
       const msg = err.message || 'Failed to create account';
       setAuthError(msg);
       return { success: false, error: msg };
+    }
+  };
+
+  // Password reset request
+  const resetPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth` : undefined,
+      });
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to send password reset email' };
     }
   };
 
@@ -363,6 +390,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         authError,
         signIn,
         signUp,
+        resetPassword,
         logout,
         createBooking,
         updateBookingStatus,

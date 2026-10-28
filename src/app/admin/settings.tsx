@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { AuthGuard } from '../../components/AuthGuard';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 
@@ -51,7 +52,8 @@ export default function AdminSettingsScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <AuthGuard requiredRole="admin">
+      <ScreenContainer>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Clinic Operations</Text>
       </View>
@@ -178,6 +180,7 @@ export default function AdminSettingsScreen() {
 
       <AdminTabBar />
     </ScreenContainer>
+    </AuthGuard>
   );
 }
 

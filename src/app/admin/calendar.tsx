@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { AdminTabBar } from '../../components/AdminTabBar';
 import { ScreenContainer } from '../../components/ScreenContainer';
+import { AuthGuard } from '../../components/AuthGuard';
 import { Colors } from '../../constants/theme';
 import { useApp } from '../../context/AppContext';
 import { Appointment } from '../../types';
@@ -72,7 +73,8 @@ export default function AdminCalendarScreen() {
   };
 
   return (
-    <ScreenContainer>
+    <AuthGuard requiredRole="admin">
+      <ScreenContainer>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>All Bookings</Text>
         <Text style={styles.headerCount}>{filtered.length} records</Text>
@@ -214,6 +216,7 @@ export default function AdminCalendarScreen() {
 
       <AdminTabBar />
     </ScreenContainer>
+    </AuthGuard>
   );
 }
 
